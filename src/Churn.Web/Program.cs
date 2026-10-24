@@ -37,6 +37,8 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<SnapshotStore>();
 builder.Services.AddSingleton<IPasswordHasher<AppUser>, PasswordHasher<AppUser>>();
 builder.Services.AddSingleton<Churn.Web.Services.EvaluationService>();
+builder.Services.AddSingleton<Churn.Web.Services.LlmService>();
+builder.Services.AddHttpClient();
 builder.Services.AddHostedService<Churn.Web.Services.RefreshService>();
 
 // Data Protection keys persisted outside the container so a normal restart
@@ -453,6 +455,60 @@ app.MapGet("/api/v1/analytics/summary", async (AppDb db) =>
     if (row is null) return Results.Ok(new { state = "no_data" });
     return Results.Ok(JsonSerializer.Deserialize<SummaryDto>(row.Payload, Jopts)!);
 }).RequireAuthorization();
+
+// --- AI brief (optional): de-identified aggregate -> operator-configured LLM.
+// Manual explicit call only; cached per evaluationId so polling never fires.
+// When the key/endpoint is missing or not allowed the feature reports as
+// unavailable — the rest of analytics keeps working.
+var aiCache = new System.Collections.Concurrent.ConcurrentDictionary<Guid, (string brief, string model)>();
+app.MapPost("/api/v1/ai/brief", async (AppDb db, Churn.Web.Services.LlmService llm,
+    ClaimsPrincipal p, CancellationToken ct) =>
+{
+    if (!llm.Enabled)
+        return Results.Json(Err("ai_not_configured", "AI brief is disabled on this stand"), statusCode: 404);
+    var run = await db.EvalRuns.OrderByDescending(r => r.CreatedAt).FirstOrDefaultAsync(ct);
+    if (run is null) return Results.NotFound(Err("no_data", "no evaluation batch"));
+
+    if (aiCache.TryGetValue(run.EvaluationId, out var hit))
+        return Results.Ok(new { brief = hit.brief, model = hit.model, run.EvaluationId, run.AsOf, cached = true });
+
+    // de-identified aggregate: counts, money totals (EUR cents), renewal buckets
+    // and reason codes — no emails, no service names, no raw snapshot.
+    var rows = await db.CustomerResults.Where(x => x.EvaluationId == run.EvaluationId).ToListAsync(ct);
+    int high = 0, medium = 0, low = 0, noAssess = 0;
+    var reasons = new Dictionary<string, int>();
+    var buckets = new Dictionary<string, int>();
+    long renewal = 0, fund = 0, uncovered = 0, atRisk = 0;
+    foreach (var r in rows)
+    {
+        var dto = JsonSerializer.Deserialize<CustomerResultDto>(r.Payload, Jopts)!;
+        switch (dto.Rank.RiskLevel)
+        { case "high": high++; break; case "medium": medium++; break;
+          case "low": low++; break; default: noAssess++; break; }
+        foreach (var c in dto.Rank.Reasons ?? Array.Empty<string>())
+            reasons[c] = reasons.TryGetValue(c, out var n) ? n + 1 : 1;
+        var m = dto.Detail.Money;
+        if (m is not null)
+        { renewal += m.RenewalCostInHorizon; fund += m.AvailableFund;
+          uncovered += m.UncoveredAmount; if (m.AtRiskAmount.HasValue) atRisk += m.AtRiskAmount.Value;
+          foreach (var l in m.Lines) { var d = l.DueAt.ToString("yyyy-MM-dd"); buckets[d] = buckets.TryGetValue(d, out var n) ? n + 1 : 1; } }
+    }
+    var aggregate = new
+    {
+        batch = new { run.EvaluationId, run.AsOf, run.SnapshotVersion, run.ModelVersion },
+        counts = new { high, medium, low, no_assessment = noAssess },
+        money_eur_cents = new { renewal_cost_total = renewal, available_fund_total = fund,
+            uncovered_total = uncovered, at_risk_total = atRisk, semantic = "heuristic_money_index" },
+        renewals_by_day = buckets.OrderBy(k => k.Key).Select(k => new { date = k.Key, lines = k.Value }),
+        reasons = reasons.OrderByDescending(k => k.Value).Select(k => new { code = k.Key, customers = k.Value }),
+        notes = "score=priority_index_not_probability; money=heuristic_index_not_expected_loss; no_assessment=insufficient_data"
+    };
+
+    var res = await llm.BriefAsync(aggregate, run.EvaluationId.ToString(), ct);
+    if (!res.Ok) return Results.Json(Err("ai_unavailable", res.Reason), statusCode: 502);
+    aiCache[run.EvaluationId] = (res.Brief!, res.Model ?? "");
+    return Results.Ok(new { brief = res.Brief, model = res.Model, run.EvaluationId, run.AsOf, cached = false });
+}).RequireAuthorization("AnalystOrAdmin").RequireRateLimiting("login");
 
 // --- snapshot: atomic replace + version, then re-evaluate -------------------
 // Only Admin may replace the source snapshot.
