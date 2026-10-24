@@ -286,11 +286,18 @@
   /* зубчатая правая кромка — НЕ снимать маску (ранее упрощение отменено) */
   .nav[data-open="true"]::before { /* mask остаётся из базового правила */ }
 
-  /* Кнопка закрытия внутри панели — только на мобиле; на десктопе скрыта полностью. */
+  /* Кнопка закрытия внутри панели — только на мобиле; на десктопе скрыта полностью.
+     На графитовом градиенте — ghost-стиль (без белой подложки): прозрачный фон,
+     текст и обводка цвета навигации, существующие радиус и фокус-кольцо. */
   .nav[data-open="true"] .nav__close { display: inline-flex; align-items: center; justify-content: center;
-    width: 32px; height: 32px; flex: none;
+    width: 36px; height: 36px; flex: none; padding: 0;
     position: absolute; top: var(--space-4); right: var(--space-4); z-index: 2;
-    color: var(--color-nav-text-active); }
+    --btn-bg: transparent; --btn-fg: var(--color-nav-text-active);
+    --btn-border: var(--color-nav-border);
+    border-radius: var(--radius-md); }
+  .nav[data-open="true"] .nav__close:hover:not(:disabled) { --btn-bg: var(--color-nav-bg-hover); --btn-border: var(--color-nav-border); }
+  .nav[data-open="true"] .nav__close:focus-visible { box-shadow: 0 0 0 2px var(--color-nav-indicator); }
+  .nav[data-open="true"] .nav__close svg { width: 16px; height: 16px; }
 
   /* Затемнённая область вне панели — закрывает меню, не перехватывает саму панель */
   .nav-backdrop {

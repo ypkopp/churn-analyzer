@@ -1,20 +1,150 @@
 @page
 @model Churn.Web.Pages.LoginModel
 @addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
-<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Вход</title>
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Вход · Tethered — Анализатор рисков оттока</title>
+<link rel="stylesheet" href="/css/tokens.css">
 <style>
-:root{--bg:#0f1720;--fg:#e6edf3;--accent:#4f8cff;--err:#ff6b6b}
-body{background:var(--bg);color:var(--fg);font:15px/1.4 system-ui;display:grid;place-items:center;min-height:100vh;margin:0}
-form{background:#18222e;padding:2rem;border-radius:12px;min-width:280px}
-input{width:100%;padding:.6rem;margin:.3rem 0 .9rem;border-radius:8px;border:1px solid #2c3a4a;background:#0e1720;color:var(--fg)}
-button{width:100%;padding:.7rem;background:var(--accent);border:0;border-radius:8px;color:#fff;cursor:pointer}
-.err{color:var(--err);min-height:1.2em}
-</style></head><body>
-<form method="post">
-  @Html.AntiForgeryToken()
-  <h2>Вход в панель</h2>
-  <label>Логин<input name="Login" autocomplete="username" required></label>
-  <label>Пароль<input name="Password" type="password" autocomplete="current-password" required></label>
-  <div class="err">@Model.Error</div>
-  <button type="submit">Войти</button>
-</form></body></html>
+  :root { --brand-tether: var(--color-nav-indicator); }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: grid;
+    font-family: var(--font-sans); color: var(--color-text-primary);
+    background: var(--color-bg-page);
+  }
+  .login { display: grid; grid-template-columns: minmax(320px,460px) minmax(0,1fr); min-height: 100vh; }
+
+  /* ---------- brand side: Tethered gradient + wordmark ---------- */
+  .brand {
+    position: relative; display: flex; flex-direction: column; justify-content: space-between;
+    padding: clamp(24px,5vw,56px); overflow: hidden;
+    background: var(--gradient-nav); color: var(--color-nav-text-active);
+  }
+  .brand::after { /* мягкое статичное свечение как в навигации */
+    content:""; position:absolute; inset:0; pointer-events:none;
+    background: var(--gradient-nav-glow);
+  }
+  .brand > * { position: relative; z-index: 1; }
+  .brand__mark { color: var(--color-nav-text-active); }
+  .brand__tagline { margin-top: auto; }
+  .brand__tagline h1 { font: var(--weight-bold) clamp(26px,3.4vw,34px)/1.15 var(--font-sans); margin: 0 0 12px; }
+  .brand__tagline p { color: var(--color-nav-text); margin: 0; font-size: var(--text-md); line-height: var(--lh-md); max-width: 34ch; }
+  .brand__foot { margin-top: 32px; color: var(--color-nav-muted); font-size: var(--text-sm); }
+
+  /* ---------- form side ---------- */
+  .panel { display: grid; place-items: center; padding: clamp(20px,5vw,56px); }
+  .card {
+    width: min(100%, 400px); background: var(--color-bg-surface);
+    border-radius: var(--radius-lg); box-shadow: var(--shadow-md);
+    padding: clamp(22px,4vw,32px);
+  }
+  .card__mark { color: var(--color-accent); margin-bottom: 14px; }
+  .card h2 { margin: 0 0 4px; font: var(--weight-bold) var(--text-xl)/var(--lh-xl) var(--font-sans); }
+  .card__sub { color: var(--color-text-secondary); font-size: var(--text-md); margin: 0 0 20px; }
+
+  .field { margin-bottom: 14px; }
+  .field label { display:block; font: var(--weight-semibold) var(--text-sm)/1 var(--font-sans); color: var(--color-text-secondary); margin-bottom: 6px; }
+  .control { position: relative; }
+  .control input {
+    width: 100%; padding: 10px 12px; font: var(--text-md) var(--font-sans);
+    border: var(--border-width) solid var(--color-border-default);
+    border-radius: var(--radius-md); background: var(--color-bg-surface);
+    color: var(--color-text-primary);
+  }
+  .control input:focus-visible { outline: none; border-color: var(--color-accent); box-shadow: var(--focus-ring); }
+  .control input[aria-invalid="true"] { border-color: var(--color-danger-border); }
+  .control .eye {
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
+    background: transparent; border: 0; border-radius: var(--radius-sm);
+    color: var(--color-text-tertiary); cursor: pointer; padding: 0;
+  }
+  .control .eye:hover { color: var(--color-text-primary); }
+  .control .eye:focus-visible { box-shadow: var(--focus-ring); outline:none; }
+
+  .msg { min-height: 1.3em; font-size: var(--text-sm); margin: 6px 0 12px; }
+  .msg--err { color: var(--color-danger-fg); }
+
+  .submit {
+    width: 100%; padding: 11px 12px; border: 0; border-radius: var(--radius-md);
+    background: var(--color-accent); color: var(--color-accent-contrast);
+    font: var(--weight-semibold) var(--text-md)/1 var(--font-sans); cursor: pointer;
+  }
+  .submit:hover:not(:disabled) { background: var(--color-accent-hover); }
+  .submit:focus-visible { box-shadow: var(--focus-ring); outline: none; }
+  .submit:disabled { opacity: .7; cursor: default; }
+  .submit .spin { display:inline-block; width:14px;height:14px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;vertical-align:-2px;margin-right:8px;animation:sp .7s linear infinite; }
+  @@keyframes sp { to { transform: rotate(360deg); } }
+
+  @@media (max-width: 760px) {
+    .login { grid-template-columns: 1fr; }
+    .brand { min-height: 0; padding: 20px; background: var(--gradient-nav-h); }
+    .brand__tagline, .brand__foot { display: none; }
+    .panel { padding: 24px 16px; }
+  }
+  @@media (prefers-reduced-motion: reduce) { .submit .spin { animation: none; } }
+</style>
+</head>
+<body>
+<div class="login">
+  <aside class="brand">
+    <span class="brand__mark" id="brand"></span>
+    <div class="brand__tagline">
+      <h1>Клиенты под риском</h1>
+      <p>Кому уделить внимание, почему клиент может не продлить услуги и какая сумма продлений под риском.</p>
+    </div>
+    <div class="brand__foot">Score — эвристический индекс приоритета, не вероятность оттока.</div>
+  </aside>
+
+  <main class="panel">
+    <form class="card" method="post" id="login-form" novalidate>
+      @Html.AntiForgeryToken()
+      <span class="card__mark" id="card-mark"></span>
+      <h2>Вход в панель</h2>
+      <p class="card__sub">Сессия доступна только авторизованным пользователям.</p>
+
+      <div class="field">
+        <label for="Login">Логин</label>
+        <div class="control"><input id="Login" name="Login" autocomplete="username" required></div>
+      </div>
+      <div class="field">
+        <label for="Password">Пароль</label>
+        <div class="control">
+          <input id="Password" name="Password" type="password" autocomplete="current-password" required>
+          <button type="button" class="eye" id="eye" aria-label="Показать пароль" aria-pressed="false" tabindex="-1">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.5 8S4 4.5 8 4.5 14.5 8 14.5 8 12 11.5 8 11.5 1.5 8 1.5 8Z" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.4"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="msg msg--err" id="err" role="alert" aria-live="polite">@Model.Error</div>
+      <button class="submit" type="submit" id="submit"><span class="spin" hidden id="spin"></span><span id="submit-text">Войти</span></button>
+    </form>
+  </main>
+</div>
+<script src="/js/lib/brand.js"></script>
+<script>
+  var wm = window.TetheredBrand.Wordmark(30);
+  document.getElementById('brand').innerHTML = wm;
+  document.getElementById('card-mark').innerHTML = window.TetheredBrand.CompactMark(26);
+
+  var eye = document.getElementById('eye'), pw = document.getElementById('Password');
+  eye.addEventListener('click', function () {
+    var show = pw.type === 'password';
+    pw.type = show ? 'text' : 'password';
+    eye.setAttribute('aria-pressed', String(show));
+    eye.setAttribute('aria-label', show ? 'Скрыть пароль' : 'Показать пароль');
+  });
+
+  var form = document.getElementById('login-form'), sub = document.getElementById('submit'),
+      spin = document.getElementById('spin'), txt = document.getElementById('submit-text');
+  form.addEventListener('submit', function () {
+    sub.disabled = true; spin.hidden = false; txt.textContent = 'Вход…';
+  });
+</script>
+</body>
+</html>
