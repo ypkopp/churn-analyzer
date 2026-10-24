@@ -160,7 +160,7 @@ ETag/версии → при совпадении версий UI не пере�
 | 5c | Optimistic concurrency настроек | expectedVersion→409 при mismatch | тест конфликта | подтверждено A07 |
 | 5d | Перезапуск без смешивания версий | результаты в БД, не пересчёт заново | тест restart→тот же батч | подтверждено A07 |
 | 6 | `/metrics` Prometheus | endpoint + агрегаты из опубликованного батча | scrape-тест формата | подтверждено A09 |
-| 6a | Swagger UI `/api/v1/docs` | Swashbuckle UI + `/api/v1/docs/openapi.json` | 200 + GET spec + CSRF-защищённый PATCH | подтверждено A09 |
+| 6a | Swagger UI `/api/v1/docs` | Swashbuckle UI + `/api/v1/docs/v1.json` | 200 + GET spec + CSRF-защищённый PATCH | подтверждено A09 |
 | 7 | Расширяемость признаков/коэффициентов | реестр фич + версионируемые веса | добавление фичи без рефакторинга | diff+тест |
 | 8 | Docker Compose | `compose.yaml` (app+postgres) | `docker compose up` | подтверждено A06 |
 | 9 | Аутентификация, защита API | cookie-auth + [Authorize] | тест 401 без логина | подтверждено A06/A08 |

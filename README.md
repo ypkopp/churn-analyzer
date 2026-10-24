@@ -48,7 +48,7 @@ docker compose up -d --build
 | `GET /api/v1/auth/csrf` | CSRF-токен для изменяющих запросов |
 | `GET /api/v1/ui-config` | интервал polling UI (отдельно от пересчёта) |
 | `GET /metrics` | защищённый Prometheus text exposition из последнего опубликованного батча |
-| `/api/v1/docs` | защищённые Swagger UI и OpenAPI JSON (`/api/v1/docs/openapi.json`) |
+| `/api/v1/docs` | защищённые Swagger UI и OpenAPI JSON (`/api/v1/docs/v1.json`) |
 
 ## Обновление UI без reload
 Экран клиентов опрашивает сводку с интервалом `Ui:PollSeconds` (по умолчанию 15 с;

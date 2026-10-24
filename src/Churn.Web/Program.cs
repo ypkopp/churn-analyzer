@@ -386,10 +386,10 @@ app.Use(async (ctx, next) =>
     { ctx.Response.StatusCode = 401; return; }
     await next();
 });
-app.UseSwagger(c => { c.RouteTemplate = "api/v1/docs/openapi.json"; });
+app.UseSwagger(c => { c.RouteTemplate = "api/v1/docs/{documentName}.json"; });
 app.UseSwaggerUI(c =>
 {
-    c.SwaggerEndpoint("/api/v1/docs/openapi.json", "Churn Risk Analyzer API v1");
+    c.SwaggerEndpoint("/api/v1/docs/v1.json", "Churn Risk Analyzer API v1");
     c.RoutePrefix = "api/v1/docs";
 });
 app.MapGet("/api/v1/docs", () => Results.Redirect("/api/v1/docs/index.html")).RequireAuthorization();

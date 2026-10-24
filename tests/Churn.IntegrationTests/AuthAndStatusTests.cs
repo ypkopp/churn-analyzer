@@ -106,7 +106,7 @@ public class AuthAndStatusTests : IClassFixture<PgAppFactory>
         await Login(c);
         var ui = await c.GetAsync("/api/v1/docs/index.html");
         Assert.Equal(HttpStatusCode.OK, ui.StatusCode);
-        var spec = await c.GetAsync("/api/v1/docs/openapi.json");
+        var spec = await c.GetAsync("/api/v1/docs/v1.json");
         Assert.Equal(HttpStatusCode.OK, spec.StatusCode);
         var json = await spec.Content.ReadAsStringAsync();
         Assert.Contains("/api/v1/customers", json);
