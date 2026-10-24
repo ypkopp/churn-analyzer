@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Tethered — компактный знак на белом: #182230 + привязь индиго #4F46E5. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0.25 0 32 32" role="img" aria-label="Tethered">
+  <title>Tethered</title>
+  <g fill="none" stroke="#182230" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.5 5V23a5 5 0 0 0 5 5"/>
+    <path d="M16.5 4V28"/><path d="M16.5 19.5a6.5 6.5 0 0 1 13 0V28"/>
+    <path d="M3 12H16.5" stroke="#4F46E5"/>
+    <circle cx="3" cy="12" r="2.4" fill="#4F46E5" stroke="none"/>
+  </g>
+</svg>

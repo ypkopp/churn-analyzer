@@ -1,0 +1,268 @@
+/* =========================================================================
+   Tethered · Анализатор рисков оттока — Design tokens (single source of truth)
+   Все компоненты обращаются ТОЛЬКО к этим переменным.
+   Production: подключается как /css/tokens.css в _Layout.cshtml.
+   ========================================================================= */
+
+@import url("https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+
+:root {
+  /* ---------- Primitive palette (oklch) ---------- */
+  --p-slate-0:   oklch(100% 0 0);
+  --p-slate-25:  oklch(97.6% 0.006 275);   /* ≈ #F6F7FB фон */
+  --p-slate-50:  oklch(96.2% 0.007 270);
+  --p-slate-100: oklch(93.4% 0.009 268);
+  --p-slate-200: oklch(89.6% 0.012 266);
+  --p-slate-300: oklch(82%   0.016 264);
+  --p-slate-400: oklch(67%   0.02  262);
+  --p-slate-500: oklch(54.5% 0.024 260);
+  --p-slate-600: oklch(45%   0.027 258);
+  --p-slate-700: oklch(36%   0.028 257);
+  --p-slate-800: oklch(29%   0.028 262);
+  --p-slate-850: oklch(25%   0.027 264);
+  --p-slate-900: oklch(24.5% 0.03  255);   /* ≈ #182230 текст */
+  --p-slate-950: oklch(20%   0.025 265);   /* ≈ #121826 навигация */
+
+  --p-indigo-50:  oklch(96.2% 0.022 277);
+  --p-indigo-100: oklch(92.6% 0.045 277);
+  --p-indigo-300: oklch(76%   0.12  277);
+  --p-indigo-500: oklch(51.1% 0.23  277);  /* ≈ #4F46E5 акцент */
+  --p-indigo-600: oklch(45.5% 0.215 277);
+  --p-indigo-700: oklch(40%   0.19  277);
+
+  --p-red-50:   oklch(96.5% 0.022 22);
+  --p-red-200:  oklch(87%   0.065 22);
+  --p-red-600:  oklch(53%   0.175 25);
+  --p-red-700:  oklch(46%   0.16  25);
+
+  --p-amber-50:  oklch(97%  0.035 80);
+  --p-amber-200: oklch(89%  0.09  78);
+  --p-amber-500: oklch(74%  0.15  70);
+  --p-amber-700: oklch(50%  0.11  60);
+
+  --p-green-50:  oklch(96.8% 0.02 150);
+  --p-green-200: oklch(88%   0.05 150);
+  --p-green-700: oklch(46%   0.08 150);
+
+  --p-blue-50:   oklch(96.6% 0.018 245);
+  --p-blue-200:  oklch(88%   0.05  245);
+  --p-blue-600:  oklch(52%   0.13  250);
+
+  /* ---------- Semantic: surfaces ---------- */
+  --color-bg-page:      var(--p-slate-25);
+  --color-bg-surface:   var(--p-slate-0);
+  --color-bg-sunken:    var(--p-slate-50);
+  --color-bg-hover:     oklch(97.4% 0.008 275);
+  --color-bg-selected:  var(--p-indigo-50);
+  --color-bg-overlay:   oklch(20% 0.025 265 / 0.40);
+  --color-bg-inverse:   var(--p-slate-950);
+
+  /* ---------- Semantic: text ---------- */
+  --color-text-primary:   var(--p-slate-900);
+  --color-text-secondary: var(--p-slate-600);
+  --color-text-tertiary:  var(--p-slate-500);
+  --color-text-disabled:  var(--p-slate-400);
+  --color-text-inverse:   var(--p-slate-0);
+  --color-text-link:      var(--p-indigo-500);
+
+  /* ---------- Semantic: borders ---------- */
+  --color-border-subtle:  var(--p-slate-100);
+  --color-border-default: var(--p-slate-200);
+  --color-border-strong:  var(--p-slate-300);
+  --color-border-focus:   var(--p-indigo-500);
+
+  /* ---------- Accent: индиго только для действий, выбора и фокуса ---------- */
+  --color-accent:          var(--p-indigo-500);
+  --color-accent-hover:    var(--p-indigo-600);
+  --color-accent-subtle:   var(--p-indigo-50);
+  --color-accent-on-subtle:var(--p-indigo-600);
+  --color-accent-contrast: var(--p-slate-0);
+
+  /* ---------- Navigation: градиент midnight → indigo → violet (D04) ----------
+     Все nav-тексты рассчитаны на самый светлый участок (#5632A0) — HANDOFF §2c. */
+  --nav-grad-1: #10132B;   /* midnight */
+  --nav-grad-2: #252268;   /* indigo   */
+  --nav-grad-3: #5632A0;   /* violet   */
+  --gradient-nav: linear-gradient(172deg, var(--nav-grad-1) 0%, var(--nav-grad-1) 12%, var(--nav-grad-2) 52%, var(--nav-grad-3) 100%);
+  --gradient-nav-glow:
+    radial-gradient(120% 30% at 0% 0%, oklch(62% 0.19 280 / 0.22), transparent 70%),
+    radial-gradient(90% 22% at 100% 72%, oklch(72% 0.17 315 / 0.16), transparent 72%);
+  --gradient-nav-h: linear-gradient(90deg, var(--nav-grad-1), var(--nav-grad-2) 60%, var(--nav-grad-3));
+  --color-nav-bg:          var(--nav-grad-1);
+  --color-nav-bg-hover:    oklch(100% 0 0 / 0.08);
+  --color-nav-bg-active:   oklch(100% 0 0 / 0.13);
+  --color-nav-text:        oklch(93% 0.018 290);
+  --color-nav-text-active: oklch(100% 0 0);
+  --color-nav-muted:       oklch(88% 0.035 295);
+  --color-nav-border:      oklch(100% 0 0 / 0.14);
+  --color-nav-indicator:   oklch(87% 0.085 300);   /* лавандовая «привязь» */
+  --nav-edge-depth: 6px;   /* глубина зубцов правой кромки (5–7) */
+  --nav-edge-step:  24px;  /* шаг зубцов (20–28) */
+
+  /* ---------- Risk levels (always paired with text label + glyph) ---------- */
+  --color-risk-high-fg:     var(--p-red-700);
+  --color-risk-high-bg:     var(--p-red-50);
+  --color-risk-high-border: var(--p-red-200);
+  --color-risk-high-solid:  var(--p-red-600);
+
+  --color-risk-medium-fg:     var(--p-amber-700);
+  --color-risk-medium-bg:     var(--p-amber-50);
+  --color-risk-medium-border: var(--p-amber-200);
+  --color-risk-medium-solid:  var(--p-amber-500);
+
+  --color-risk-low-fg:     var(--p-green-700);
+  --color-risk-low-bg:     var(--p-green-50);
+  --color-risk-low-border: var(--p-green-200);
+  --color-risk-low-solid:  var(--p-green-700);
+
+  --color-risk-none-fg:     var(--p-slate-600);
+  --color-risk-none-bg:     var(--p-slate-0);
+  --color-risk-none-border: var(--p-slate-300);
+  --color-risk-none-solid:  var(--p-slate-400);
+
+  /* ---------- Feedback states ---------- */
+  --color-success-fg:     var(--p-indigo-600);
+  --color-success-bg:     var(--p-indigo-50);
+  --color-success-border: var(--p-indigo-100);
+  --color-warning-fg:     var(--p-amber-700);
+  --color-warning-bg:     var(--p-amber-50);
+  --color-warning-border: var(--p-amber-200);
+  --color-danger-fg:      var(--p-red-700);
+  --color-danger-bg:      var(--p-red-50);
+  --color-danger-border:  var(--p-red-200);
+  --color-danger-solid:   var(--p-red-600);
+  --color-info-fg:        var(--p-blue-600);
+  --color-info-bg:        var(--p-blue-50);
+  --color-info-border:    var(--p-blue-200);
+
+  /* ---------- Demo marking (не путать с уровнями риска) ---------- */
+  /* нейтральная графитовая метка: индиго — только действия, R/A/G — только риск */
+  --color-demo-fg:     var(--p-slate-800);
+  --color-demo-bg:     var(--p-slate-100);
+  --color-demo-border: var(--p-slate-400);
+
+  /* ---------- Typography ---------- */
+  --font-sans: "Golos Text", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+
+  --text-2xs: 11px;  --lh-2xs: 14px;
+  --text-xs:  12px;  --lh-xs:  16px;
+  --text-sm:  13px;  --lh-sm:  20px;
+  --text-md:  14px;  --lh-md:  20px;
+  --text-lg:  16px;  --lh-lg:  24px;
+  --text-xl:  20px;  --lh-xl:  28px;
+  --text-2xl: 24px;  --lh-2xl: 32px;
+  --text-3xl: 32px;  --lh-3xl: 38px;
+  --text-display: 28px; --lh-display: 34px;
+
+  --weight-regular: 400;
+  --weight-medium:  500;
+  --weight-semibold:600;
+  --weight-bold:    700;
+
+  --tracking-tight: -0.018em;
+  --tracking-display: -0.024em;
+  --tracking-caps:  0.06em;
+
+  /* Цифры одинаковой ширины во всех числовых/денежных значениях */
+  --numeric: tabular-nums lining-nums;
+
+  /* ---------- Spacing (4px base) ---------- */
+  --space-0: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* ---------- Sizing ---------- */
+  --size-control-sm: 28px;
+  --size-control-md: 36px;
+  --size-row:        42px;
+  --size-nav:        228px;
+  --size-nav-rail:   64px;
+  --size-drawer:     540px;
+  --size-modal:      600px;
+  --size-content-max:1240px;
+
+  /* ---------- Radii ---------- */
+  --radius-xs: 3px;
+  --radius-sm: 5px;
+  --radius-md: 7px;
+  --radius-lg: 10px;
+  --radius-pill: 999px;
+
+  /* ---------- Borders ---------- */
+  --border-width: 1px;
+  --border-subtle:  var(--border-width) solid var(--color-border-subtle);
+  --border-default: var(--border-width) solid var(--color-border-default);
+  --border-strong:  var(--border-width) solid var(--color-border-strong);
+  --focus-ring: 0 0 0 2px var(--color-bg-surface), 0 0 0 4px var(--color-border-focus);
+
+  /* ---------- Shadows (functional, not decorative) ---------- */
+  --shadow-xs: 0 1px 0 oklch(20% 0.03 265 / 0.04);
+  --shadow-sm: 0 1px 2px oklch(20% 0.03 265 / 0.06), 0 1px 1px oklch(20% 0.03 265 / 0.03);
+  --shadow-md: 0 4px 12px oklch(20% 0.03 265 / 0.08), 0 1px 3px oklch(20% 0.03 265 / 0.05);
+  --shadow-lg: 0 16px 40px oklch(20% 0.03 265 / 0.16), 0 2px 6px oklch(20% 0.03 265 / 0.06);
+
+  /* ---------- z-index ---------- */
+  --z-base:     0;
+  --z-sticky:   10;
+  --z-nav:      20;
+  --z-popover:  30;
+  --z-overlay:  40;
+  --z-drawer:   50;
+  --z-modal:    60;
+  --z-toast:    70;
+  --z-tooltip:  80;
+
+  /* ---------- Motion ----------
+     Правило: движение сопровождает только реальное изменение состояния.
+     Смысл всегда передан текстом/формой — при reduced motion ничего не теряется. */
+  --duration-instant: 80ms;
+  --duration-fast:    140ms;
+  --duration-base:    220ms;
+  --duration-slow:    320ms;
+  --ease-standard:  cubic-bezier(0.2, 0, 0, 1);
+  --ease-enter:     cubic-bezier(0.05, 0.7, 0.1, 1);
+  --ease-exit:      cubic-bezier(0.3, 0, 0.8, 0.15);
+
+  /* Семантические длительности (ссылаются на базовые → reduced motion обнуляет их автоматически) */
+  --duration-drawer-in:  var(--duration-base);   /* 220 — появление карточки */
+  --duration-drawer-out: var(--duration-fast);   /* 140 — закрытие быстрее появления */
+  --duration-feedback:   var(--duration-slow);   /* 320 — вспышка success/error на кнопке */
+  --duration-spin:       900ms;                  /* оборот иконки refresh, только пока идёт запрос */
+  --duration-mark-intro: 640ms;                  /* однократная прорисовка знака */
+  --motion-drawer-shift: 24px;                   /* смещение drawer при появлении */
+  --duration-icon:       var(--duration-base);   /* реакция иконки на hover/focus (220) */
+  --duration-icon-act:   560ms;                  /* однократное «действие» иконки при hover/focus */
+}
+
+/* Reduced motion: обнуляем длительности — все компоненты используют токены */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-icon-act: 0ms;
+    --duration-spin: 0ms;
+    --duration-mark-intro: 0ms;
+    --motion-drawer-shift: 0px;
+    --duration-instant: 0ms;
+    --duration-fast:    0ms;
+    --duration-base:    0ms;
+    --duration-slow:    0ms;
+  }
+}
+/* Принудительный режим для проверки на стенде */
+:root[data-motion="reduced"] {
+  --duration-icon-act: 0ms;
+  --duration-spin: 0ms;
+  --duration-mark-intro: 0ms;
+  --motion-drawer-shift: 0px;
+  --duration-instant: 0ms;
+  --duration-fast:    0ms;
+  --duration-base:    0ms;
+  --duration-slow:    0ms;
+}

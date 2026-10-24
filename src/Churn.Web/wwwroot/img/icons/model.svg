@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Tethered icons · Модель. Две направляющие и маркеры-ромбы настройки. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d="M3 6H17M3 14H17" opacity=".55"/>
+  <path d="M7 3.7 9.3 6 7 8.3 4.7 6Z" fill="currentColor"/>
+  <path d="M13 11.7 15.3 14 13 16.3 10.7 14Z" fill="currentColor"/>
+</svg>

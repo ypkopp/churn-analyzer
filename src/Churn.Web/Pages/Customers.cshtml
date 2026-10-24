@@ -1,0 +1,74 @@
+@page "/customers"
+@model Churn.Web.Pages.CustomersModel
+@{
+    Layout = "_Layout";
+    ViewData["Title"] = "Клиенты под риском";
+}
+@section Head {
+<link rel="stylesheet" href="/css/pages-customers.css">
+}
+<div class="app">
+  <nav class="nav" aria-label="Основная навигация" data-open="false" tabindex="-1">
+    <div class="nav__brand">
+      <span class="nav__wordmark" data-wordmark></span>
+      <span class="nav__mark" data-mark></span>
+      <div class="nav__brand-sub">Анализатор рисков оттока</div>
+      <button class="c-btn c-btn--icon c-btn--sm nav__close" data-action="nav-close" aria-label="Закрыть меню"><span data-icon="close" style="display:flex"></span></button>
+    </div>
+    <div class="nav__section">
+      <div class="nav__label">Разделы</div>
+      <button class="nav__item" aria-current="page" data-tip="Клиенты под риском" data-tip-pos="right">
+        <span class="nav__item-icon" data-icon="clients"></span><span class="nav__item-text">Клиенты</span>
+      </button>
+      <button class="nav__item" data-action="open-settings" aria-haspopup="dialog" aria-expanded="false" data-tip="Открывает настройки поверх экрана" data-tip-pos="right">
+        <span class="nav__item-icon" data-icon="model"></span><span class="nav__item-text">Настройки модели</span>
+      </button>
+      <button class="nav__item" data-action="open-source" aria-haspopup="dialog" aria-expanded="false" data-tip="Замена снимка данных" data-tip-pos="right">
+        <span class="nav__item-icon" data-icon="source"></span><span class="nav__item-text">Источник данных</span>
+      </button>
+    </div>
+    <div class="nav__spacer"></div>
+    <div class="nav__user">
+      <div class="nav__avatar" aria-hidden="true">@Model.AvatarInitials</div>
+      <div><div class="nav__user-name">@Model.UserName</div><div class="nav__user-role">cookie-сессия</div></div>
+      <form method="post" asp-page-handler="Logout" style="display:inline">@Html.AntiForgeryToken()
+        <button class="c-btn c-btn--ghost c-btn--sm" type="submit" data-tip="Завершить сессию" data-tip-pos="end">Выйти</button>
+      </form>
+    </div>
+  </nav>
+
+  <div class="main">
+    <div class="mobile-bar">
+      <button class="c-btn c-btn--icon c-btn--sm" data-action="nav-toggle" aria-expanded="false" aria-label="Меню"><span data-icon="menu" style="display:flex"></span></button>
+      <span class="mobile-bar__brand" data-wordmark-sm></span>
+    </div>
+    <div class="nav-backdrop" data-action="nav-backdrop" hidden aria-hidden="true"></div>
+
+    <main class="page" id="page-content" data-screen-label="Клиенты под риском">
+      <div id="page-head"></div>
+      <div id="notices"></div>
+      <section class="kpis" id="kpis" aria-label="Сводные показатели"></section>
+      <section class="panel" aria-label="Таблица клиентов">
+        <div class="toolbar" id="toolbar"></div>
+        <div id="table-region"></div>
+        <div class="table-foot">
+          <span>Без оценки — в конце списка при любой сортировке.</span>
+          <span class="kbd-hint"><span><span class="c-kbd">/</span> поиск</span><span><span class="c-kbd">↑</span><span class="c-kbd">↓</span> строки</span><span><span class="c-kbd">Enter</span> карточка</span><span><span class="c-kbd">Esc</span> закрыть</span></span>
+        </div>
+      </section>
+    </main>
+    <div class="page" id="full-state" hidden></div>
+  </div>
+</div>
+
+@section Scripts {
+<script>
+  document.querySelectorAll("[data-icon]").forEach((n) => (n.innerHTML = UI.Icon[n.dataset.icon]));
+  document.querySelectorAll("[data-wordmark]").forEach((n) => (n.innerHTML = UI.Wordmark(30, { intro: true })));
+  document.querySelectorAll("[data-mark]").forEach((n) => (n.innerHTML = UI.Mark(30, { intro: true })));
+  document.querySelectorAll("[data-wordmark-sm]").forEach((n) => (n.innerHTML = UI.Wordmark(22)));
+</script>
+<script src="/js/pages/customers.js"></script>
+<script src="/js/pages/settings-modal.js"></script>
+<script src="/js/pages/source-modal.js"></script>
+}

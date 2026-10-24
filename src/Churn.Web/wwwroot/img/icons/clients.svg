@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Tethered icons · Клиенты. Сетка 20, обводка 1.6, round. Два узла и привязь между ними. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <circle cx="6.2" cy="7" r="2.3"/><path d="M2.4 16.2a3.8 3.8 0 0 1 7.6 0"/>
+  <circle cx="13.8" cy="7" r="2.3"/><path d="M10 16.2a3.8 3.8 0 0 1 7.6 0"/>
+  <path d="M8.7 7H11.3"/>
+</svg>

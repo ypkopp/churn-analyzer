@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>@ViewData["Title"] · Tethered — Анализатор рисков оттока</title>
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/components.css">
+@await RenderSectionAsync("Head", required: false)
+</head>
+<body>
+@RenderBody()
+<script src="/js/lib/format.js"></script>
+<script src="/js/lib/api-adapter.js"></script>
+<script src="/js/lib/brand.js"></script>
+<script src="/js/lib/icons.js"></script>
+<script src="/js/lib/components.js"></script>
+@await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

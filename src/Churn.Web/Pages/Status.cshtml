@@ -1,0 +1,24 @@
+@page
+@model Churn.Web.Pages.StatusModel
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Состояние</title>
+<style>
+:root{--bg:#0f1720;--fg:#e6edf3;--ok:#4ade80;--muted:#8fa3b8}
+body{background:var(--bg);color:var(--fg);font:15px/1.5 system-ui;max-width:640px;margin:2rem auto;padding:0 1rem}
+.card{background:#18222e;padding:1.5rem;border-radius:12px}
+.kv{display:flex;justify-content:space-between;padding:.4rem 0;border-bottom:1px solid #243142}
+.kv span:first-child{color:var(--muted)}
+form{margin-top:1rem}
+button{padding:.6rem 1.2rem;background:#33475e;border:0;border-radius:8px;color:#fff;cursor:pointer}
+</style></head><body>
+<div class="card">
+  <h2>Состояние приложения</h2>
+  <div class="kv"><span>Пользователь</span><b>@User.Identity?.Name</b></div>
+  <div class="kv"><span>Версия снимка</span><b>@(Model.SnapshotVersion?.ToString() ?? "—")</b></div>
+  <div class="kv"><span>Версия модели</span><b>@(Model.ModelVersion?.ToString() ?? "—")</b></div>
+  <div class="kv"><span>Время (UTC)</span><b>@Model.NowUtc</b></div>
+  <form method="post" asp-page-handler="Logout">
+    @Html.AntiForgeryToken()
+    <button type="submit">Выйти</button>
+  </form>
+</div></body></html>

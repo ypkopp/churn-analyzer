@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Tethered — wordmark для тёмного градиента навигации: буквы белые, привязь лавандовая (#CDB8F2). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="142.5" height="32" viewBox="0 0 142.5 32" role="img" aria-label="Tethered">
+  <title>Tethered</title>
+  <g fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.5 5V23a5 5 0 0 0 5 5"/><path d="M3 12H12"/>
+    <path d="M16.5 20H32.5A8 8 0 1 0 30.16 25.66"/>
+    <path d="M42 5V23a5 5 0 0 0 5 5"/>
+    <path d="M52 4V28"/><path d="M52 19.5a6.5 6.5 0 0 1 13 0V28"/>
+    <path d="M69.5 20H85.5A8 8 0 1 0 83.16 25.66"/>
+    <path d="M90 12V28"/><path d="M90 19.5a7.5 7.5 0 0 1 7.5-7.5h1"/>
+    <path d="M103 20H119A8 8 0 1 0 116.66 25.66"/>
+    <path d="M139.5 4V28"/><path d="M131.5 12a8 8 0 1 0 0.01 0"/>
+    <path d="M38.5 12H52" stroke="#CDB8F2"/>
+    <circle cx="38.5" cy="12" r="2.4" fill="#CDB8F2" stroke="none"/>
+  </g>
+</svg>

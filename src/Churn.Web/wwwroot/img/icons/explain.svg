@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Tethered icons · Объяснение риска. Узел-клиент, привязь к скобке, три строки причин. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <circle cx="4.2" cy="10" r="2.1"/><path d="M6.3 10H8M8 5V15"/>
+  <path d="M8 5H16.6"/><path d="M8 10H14.2"/><path d="M8 15H15.6"/>
+</svg>

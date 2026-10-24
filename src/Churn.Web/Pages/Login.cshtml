@@ -1,0 +1,20 @@
+@page
+@model Churn.Web.Pages.LoginModel
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Вход</title>
+<style>
+:root{--bg:#0f1720;--fg:#e6edf3;--accent:#4f8cff;--err:#ff6b6b}
+body{background:var(--bg);color:var(--fg);font:15px/1.4 system-ui;display:grid;place-items:center;min-height:100vh;margin:0}
+form{background:#18222e;padding:2rem;border-radius:12px;min-width:280px}
+input{width:100%;padding:.6rem;margin:.3rem 0 .9rem;border-radius:8px;border:1px solid #2c3a4a;background:#0e1720;color:var(--fg)}
+button{width:100%;padding:.7rem;background:var(--accent);border:0;border-radius:8px;color:#fff;cursor:pointer}
+.err{color:var(--err);min-height:1.2em}
+</style></head><body>
+<form method="post">
+  @Html.AntiForgeryToken()
+  <h2>Вход в панель</h2>
+  <label>Логин<input name="Login" autocomplete="username" required></label>
+  <label>Пароль<input name="Password" type="password" autocomplete="current-password" required></label>
+  <div class="err">@Model.Error</div>
+  <button type="submit">Войти</button>
+</form></body></html>

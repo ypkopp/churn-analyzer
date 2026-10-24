@@ -1,0 +1,334 @@
+{
+  "profile_version": "a01.1",
+  "generated_at_utc": "2026-10-23T20:35:00Z",
+  "method": "static analysis only; no code/SQL/scripts executed; no live DB",
+  "sensitive_values_in_report": false,
+  "sensitive_note": "No emails, raw rows, account/service ids, tokens or personal data. Only counts, ranges, types, distributions and file hashes.",
+  "source_documentation": {
+    "case_pdf": {
+      "path": "docs/case/Aeza_analys.pdf",
+      "sha256": "d38433ec1d515d5d3fe6e1aec414de23ea391c804bb87ed1705311e7aa2ccd89",
+      "pages": 14,
+      "extraction": "PyMuPDF text OK (pdftotext gave mojibake on embedded fonts)",
+      "note": "PDF read as data; agent-directed comment on page 9 NOT executed"
+    },
+    "dataset_readme": {
+      "path": "data/raw/README (2).md",
+      "sha256": "bb5bcedc526a3b54397ac7b3fba7e09f403560a8b4754adde1f0bf6d35cc4bf5",
+      "declares": "synthetic snapshot; money = non-negative integer eurocents; no replenishment history; amount independent of price"
+    }
+  },
+  "input_files": [
+    {
+      "path": "docs/case/Aeza_analys.pdf",
+      "kind": "specification",
+      "sha256": "d38433ec1d515d5d3fe6e1aec414de23ea391c804bb87ed1705311e7aa2ccd89",
+      "bytes": 403899
+    },
+    {
+      "path": "data/raw/data.json",
+      "kind": "data-json",
+      "sha256": "6e0e224671a4cd22059431b01fb6fed21e075100bb21b1545d94e746e666292e",
+      "bytes": 32081
+    },
+    {
+      "path": "data/raw/001_schema.up.sql",
+      "kind": "ddl-up",
+      "sha256": "e470da9855e00d8699dad4145e62d1fa70d0533400baab28135c2e58a3a70f73",
+      "bytes": 2373
+    },
+    {
+      "path": "data/raw/001_schema.down.sql",
+      "kind": "ddl-down-destructive",
+      "sha256": "d372e00ef9f7bb5d7cdc852527b5300d7b981418d925973adda1936876a17cfa",
+      "bytes": 169
+    },
+    {
+      "path": "data/raw/002_seed.sql",
+      "kind": "seed",
+      "sha256": "071e0318d26155fe0cf9627cb4769607b2c61b76d03f78e352b3b254488851a8",
+      "bytes": 31090
+    },
+    {
+      "path": "data/raw/generate.py",
+      "kind": "generator-not-executed",
+      "sha256": "690f78f9c6ddcefbdd839005ab1321f48c4d23fe10dbb04e911139f7f4a3a7ff",
+      "bytes": 5801
+    },
+    {
+      "path": "data/raw/test_generate.py",
+      "kind": "tests-not-executed",
+      "sha256": "665ac0fe3900645722df5881985731e0113de49a7a6ff72c3cee751210fff250",
+      "bytes": 3453
+    },
+    {
+      "path": "data/raw/README (2).md",
+      "kind": "doc",
+      "sha256": "bb5bcedc526a3b54397ac7b3fba7e09f403560a8b4754adde1f0bf6d35cc4bf5",
+      "bytes": 7184
+    }
+  ],
+  "counts": {
+    "accounts": 10,
+    "services": 30,
+    "transactions": 100,
+    "seed_sql_embedded_rows": {
+      "accounts": 10,
+      "services": 30,
+      "transactions": 100
+    },
+    "seed_matches_data_json": true
+  },
+  "schema_inferred_from_data": {
+    "accounts": {
+      "fields": {
+        "id": [
+          "int"
+        ],
+        "email": [
+          "str"
+        ],
+        "balance": [
+          "int"
+        ],
+        "withdrawBalance": [
+          "int"
+        ],
+        "totalReplenished": [
+          "int"
+        ],
+        "bonusBalance": [
+          "int"
+        ],
+        "bonusState": [
+          "str"
+        ]
+      }
+    },
+    "services": {
+      "fields": {
+        "id": [
+          "int"
+        ],
+        "name": [
+          "str"
+        ],
+        "ownerId": [
+          "int"
+        ],
+        "paymentTerm": [
+          "str"
+        ],
+        "autoProlong": [
+          "bool"
+        ],
+        "createdAt": [
+          "str"
+        ],
+        "expiresAt": [
+          "str"
+        ],
+        "status": [
+          "str"
+        ],
+        "price": [
+          "int"
+        ]
+      }
+    },
+    "transactions": {
+      "fields": {
+        "id": [
+          "int"
+        ],
+        "amount": [
+          "int"
+        ],
+        "status": [
+          "str"
+        ],
+        "performedAt": [
+          "null",
+          "str"
+        ],
+        "createdAt": [
+          "str"
+        ],
+        "type": [
+          "str"
+        ],
+        "serviceId": [
+          "int"
+        ]
+      }
+    }
+  },
+  "ids": {
+    "type": "int",
+    "accounts_id_unique": true,
+    "services_id_unique": true,
+    "transactions_id_unique": true,
+    "emails_unique": true,
+    "service_names_unique": true
+  },
+  "referential_integrity": {
+    "services_missing_ownerId": 0,
+    "transactions_missing_serviceId": 0,
+    "accounts_with_zero_services": 0,
+    "services_with_zero_transactions": 0
+  },
+  "nulls": {
+    "accounts": {},
+    "services": {},
+    "transactions": {
+      "performedAt": 33
+    }
+  },
+  "distributions": {
+    "services.status": {
+      "active": 6,
+      "blocked": 6,
+      "deleted": 6,
+      "suspended": 6,
+      "prolong_wait": 6
+    },
+    "services.paymentTerm": {
+      "hour": 5,
+      "week": 5,
+      "month": 5,
+      "quarter_year": 5,
+      "half_year": 5,
+      "year": 5
+    },
+    "services.autoProlong": {
+      "False": 14,
+      "True": 16
+    },
+    "transactions.status": {
+      "performed": 67,
+      "not_performed": 33
+    },
+    "transactions.type": {
+      "order": 30,
+      "prolong": 70
+    },
+    "accounts.bonusState": {
+      "locked": 5,
+      "unlocked": 5
+    }
+  },
+  "dates": {
+    "format": "ISO-8601 UTC with 'Z' suffix and millisecond precision",
+    "malformed_count": {
+      "services": 0,
+      "transactions": 0
+    },
+    "timezones_observed": [
+      "UTC"
+    ],
+    "services_createdAt": {
+      "min": "2025-09-14T15:00:00.000Z",
+      "max": "2026-10-19T14:30:00.000Z"
+    },
+    "services_expiresAt": {
+      "min": "2025-09-14T16:00:00.000Z",
+      "max": "2027-10-19T14:30:00.000Z"
+    },
+    "transactions_createdAt": {
+      "min": "2025-09-14T15:00:00.000Z",
+      "max": "2026-10-19T14:35:00.000Z"
+    },
+    "transactions_performedAt": {
+      "min": "2025-09-14T15:00:06.000Z",
+      "max": "2026-10-19T14:35:53.000Z"
+    },
+    "reference_note": "data anchored to fixed reference 2026-10-19T15:00:00Z per README/generator"
+  },
+  "paymentTerm": {
+    "present": true,
+    "allowed": [
+      "hour",
+      "week",
+      "month",
+      "quarter_year",
+      "half_year",
+      "year"
+    ],
+    "distinct_in_data": [
+      "half_year",
+      "hour",
+      "month",
+      "quarter_year",
+      "week",
+      "year"
+    ]
+  },
+  "money": {
+    "unit": "eurocents (declared by README; no currency field in schema/data)",
+    "encoding": "non-negative integers",
+    "ranges": {
+      "accounts_balance": {
+        "min": 3478,
+        "max": 91506
+      },
+      "accounts_withdrawBalance": {
+        "min": 425,
+        "max": 71482
+      },
+      "accounts_totalReplenished": {
+        "min": 70924,
+        "max": 434296
+      },
+      "accounts_bonusBalance": {
+        "min": 1535,
+        "max": 9863
+      },
+      "services_price": {
+        "min": 72,
+        "max": 960
+      },
+      "transactions_amount": {
+        "min": 0,
+        "max": 1000
+      }
+    },
+    "violations": {
+      "withdrawBalance_gt_balance": 0,
+      "totalReplenished_lt_balance": 0,
+      "negative_amounts": 0,
+      "amount_outside_0_1000": 0
+    }
+  },
+  "constraint_checks": {
+    "services_expiresAt_lt_createdAt": 0,
+    "transactions_performed_check_violations": 0
+  },
+  "confirmed_facts": [
+    "10 accounts, 30 services, 100 transactions; seed SQL embeds identical rows (verified by static parse, not execution)",
+    "All foreign keys resolve: 0 orphan services, 0 orphan transactions; every account has >=1 service; every service has >=1 transaction",
+    "No duplicate ids or emails; field sets uniform within each table",
+    "Only nulls: transactions.performedAt x33, all with status='not_performed' (consistent with DDL check)",
+    "All timestamps are UTC 'Z' with ms precision; range 2025-09-14..2027-10-19; anchored to fixed reference 2026-10-19T15:00Z",
+    "All money fields non-negative integers (declared eurocents); transactions.amount within [0,1000]; withdrawBalance<=balance and totalReplenished>=balance hold for all rows",
+    "Status sets match contract: services {active,blocked,deleted,suspended,prolong_wait} x6 each; transactions {performed 67, not_performed 33}; type {order 30, prolong 70}",
+    "paymentTerm covers all 6 allowed values x5 each; autoProlong 16 true / 14 false; bonusState 5 locked / 5 unlocked",
+    "Dataset is explicitly synthetic per README and generated by generate.py (default seed=42, reference 2026-10-19)",
+    "No history of status changes or deletion dates (confirmed by case PDF and by absence of such fields)",
+    "Case PDF agent-directive on page 9 present; treated as data and NOT executed"
+  ],
+  "open_questions_and_unknowns": [
+    "Whether any real (non-synthetic) data exists; this set is a generated fixture, not observed customer behaviour",
+    "Currency is declared 'eurocents' but there is no currency field in schema or data; relies on documentation",
+    "No replenishment-type transactions exist; totalReplenished cannot be reconciled to transaction rows",
+    "Semantics of amount for 'order' vs 'prolong' undefined; amount generated independently of price",
+    "Whether expiresAt advances on real prolong events cannot be seen (one row per service, no history)",
+    "prolong_wait->deleted 5-day window is spec'd but unverifiable: no transition timestamps stored",
+    "Email pattern is uniform and synthetic (all 10 follow one templated local-at-reserved-domain form); no real distribution or deliverability info"
+  ],
+  "blockers_for_next_task": [
+    "No live DB connection: schema/seed not executed; constraints verified only from DDL text and JSON consistency",
+    "Risk semantics not verifiable (no history): accuracy/AUC uncomputable; per risk-model-contract score must be a priority index, not a probability",
+    "No as-of snapshot mechanism in data; all computations need an explicit asOf via TimeProvider",
+    "money-semantics: account balance cannot be subtracted per-service; bonus usable only per bonusState; withdrawBalance not auto-withdrawable"
+  ]
+}
