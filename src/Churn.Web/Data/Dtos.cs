@@ -26,3 +26,4 @@ public sealed record ModelSettingsDto(int ModelVersion, int HorizonDays,
 
 public sealed record LoginRequest(string Login, string Password);
 public sealed record MeResponse(string Login);
+public sealed record RotatePasswordRequest(string CurrentPassword, string NewPassword);

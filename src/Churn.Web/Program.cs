@@ -219,6 +219,28 @@ app.MapPost("/api/v1/auth/logout", async (HttpContext http) =>
     return Results.NoContent();
 }).RequireAuthorization();
 
+// Admin password rotation: authenticated caller supplies current + new password.
+// The new password is hashed by the same IPasswordHasher (PBKDF2) and stored.
+// Old session cookies issued before the change are not invalidated by this —
+// callers should re-login; that is documented behavior, not a bug.
+app.MapPost("/api/v1/auth/rotate-password", async (HttpContext http, AppDb db,
+    IPasswordHasher<AppUser> hasher, ClaimsPrincipal p, RotatePasswordRequest req) =>
+{
+    if (p.Identity?.IsAuthenticated != true) return Results.Unauthorized();
+    var login = p.Identity.Name ?? "";
+    var user = await db.Users.FirstOrDefaultAsync(u => u.Login == login);
+    if (user is null) return Results.NotFound(Err("not_found", "user"));
+    if (hasher.VerifyHashedPassword(user, user.PasswordHash, req.CurrentPassword)
+            == PasswordVerificationResult.Failed)
+        return Results.Json(Err("invalid_credentials", "current password wrong"),
+            statusCode: StatusCodes.Status403Forbidden);
+    if (string.IsNullOrWhiteSpace(req.NewPassword) || req.NewPassword.Length < 10)
+        return Results.BadRequest(Err("weak_password", "min 10 chars"));
+    user.PasswordHash = hasher.HashPassword(user, req.NewPassword);
+    await db.SaveChangesAsync();
+    return Results.NoContent();
+}).RequireAuthorization();
+
 // minimal protected status endpoint (foundation — not full customers API)
 app.MapGet("/api/v1/status", async (SnapshotStore store) =>
 {
