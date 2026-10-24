@@ -370,3 +370,33 @@
 
 /* Кнопка сохранения: фиксированная ширина — смена текста pending/success/error не сдвигает футер */
 .set__save { min-width: calc(var(--space-12) * 3 + var(--space-3)); }
+
+/* ---------------- Analytics: renewals + reasons ---------------- */
+.analytics { margin-top: var(--space-4); }
+.analytics__head { padding: var(--space-4) var(--space-4) 0; }
+.analytics__title { margin: 0 0 4px; font: var(--weight-bold) var(--text-lg)/var(--lh-lg) var(--font-sans); color: var(--color-text-primary); }
+.analytics__note { margin: 0; font-size: var(--text-sm); color: var(--color-text-secondary); line-height: var(--lh-md); max-width: 72ch; }
+.analytics__grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); padding: var(--space-4); }
+.analytics__sub { margin: 0 0 10px; font: var(--weight-semibold) var(--text-md)/var(--lh-md) var(--font-sans); color: var(--color-text-secondary); }
+.analytics__empty { font-size: var(--text-sm); color: var(--color-text-tertiary); padding: var(--space-3) 0; }
+
+.renewals, .reasons { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow: auto; }
+.renewals__row, .reasons__row {
+  display: flex; align-items: center; gap: var(--space-3); width: 100%;
+  background: var(--color-bg-surface); border: var(--border-width) solid var(--color-border-default);
+  border-radius: var(--radius-md); padding: 8px 10px; cursor: pointer;
+  font: var(--text-sm) var(--font-sans); color: var(--color-text-primary); text-align: left;
+}
+.renewals__row:hover, .reasons__row:hover { background: var(--color-bg-hover); border-color: var(--color-border-strong); }
+.renewals__row:focus-visible, .reasons__row:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.renewals__day { flex: none; width: 84px; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--color-text-secondary); }
+.renewals__bars { flex: 1 1 auto; display: flex; height: 10px; border-radius: var(--radius-sm); overflow: hidden; background: var(--color-bg-sunken); }
+.renewals__seg { height: 100%; }
+.renewals__n { flex: none; min-width: 42px; text-align: right; font-family: var(--font-mono); font-size: var(--text-xs); }
+.renewals__overdue { color: var(--color-risk-high-fg); font-style: normal; font-size: var(--text-2xs); margin-left: 4px; }
+.reasons__code { flex: 1 1 auto; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--color-text-primary); }
+.reasons__n { flex: none; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--color-text-secondary); }
+
+@media (max-width: 760px) {
+  .analytics__grid { grid-template-columns: 1fr; }
+}

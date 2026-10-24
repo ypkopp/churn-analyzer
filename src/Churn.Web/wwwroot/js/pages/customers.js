@@ -206,7 +206,55 @@
     renderHead(); renderKpis();
   }
 
-  function load() { hideFullState(); return Promise.all([fetchList(), fetchSummary()]); }
+  async function fetchRenewals() {
+    const res = await api.getRenewals();
+    if (!res.ok) { if (res.error.code === "session_expired") return showSessionExpired(res.error); return; }
+    renderAnalytics(res.data);
+  }
+
+  /* ---------- analytics: renewals by date + reason counts ---------- */
+  function renderAnalytics(d) {
+    const chartEl = $("#renewals-chart"), reasonsEl = $("#reasons-list"),
+          reEmpty = $("#renewals-empty"), rsEmpty = $("#reasons-empty");
+    if (!chartEl) return;
+    const buckets = (d && d.buckets) || [], reasons = (d && d.reasons) || [];
+    reEmpty.hidden = buckets.length > 0; rsEmpty.hidden = reasons.length > 0;
+    chartEl.innerHTML = ""; reasonsEl.innerHTML = "";
+
+    const maxTotal = Math.max(1, ...buckets.map(b => b.high + b.medium + b.low + b.noAssessment));
+    const LVL = [["high","var(--color-risk-high-solid)"],["medium","var(--color-risk-medium-solid)"],
+                 ["low","var(--color-risk-low-solid)"],["noAssessment","var(--color-risk-none-solid)"]];
+    for (const b of buckets) {
+      const total = b.high + b.medium + b.low + b.noAssessment;
+      const row = document.createElement("button");
+      row.type = "button"; row.className = "renewals__row"; row.setAttribute("role","listitem");
+      row.dataset.day = b.date;
+      row.setAttribute("aria-label",
+        `${b.date}: ${total} продлений — высокий ${b.high}, средний ${b.medium}, низкий ${b.low}, без оценки ${b.noAssessment}${b.overdue ? `, просрочено ${b.overdue}` : ""}`);
+      const segs = LVL.map(([k,c]) => {
+        const v = b[k]; if (!v) return "";
+        const w = Math.max(4, Math.round((v / maxTotal) * 100));
+        return `<span class="renewals__seg" style="width:${w}%;background:${c}" title="${k}: ${v}"></span>`;
+      }).join("");
+      row.innerHTML = `
+        <span class="renewals__day">${esc(b.date)}</span>
+        <span class="renewals__bars">${segs}</span>
+        <span class="renewals__n num">${total}${b.overdue ? `<em class="renewals__overdue" title="просрочено">+${b.overdue} проср.</em>` : ""}</span>`;
+      row.addEventListener("click", () => {
+        $("#table-region")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      chartEl.appendChild(row);
+    }
+    for (const r of reasons) {
+      const li = document.createElement("button");
+      li.type = "button"; li.className = "reasons__row"; li.setAttribute("role","listitem");
+      li.innerHTML = `<span class="reasons__code">${esc(r.code)}</span><span class="reasons__n num">${r.customers}</span>`;
+      li.addEventListener("click", () => { $("#table-region")?.scrollIntoView({ behavior:"smooth", block:"start" }); });
+      reasonsEl.appendChild(li);
+    }
+  }
+
+  function load() { hideFullState(); return Promise.all([fetchList(), fetchSummary(), fetchRenewals()]); }
 
   /* ---- polling: same identity tuple, never merge stale & new batches ---- */
   function batchId(snap) { return snap && snap.id; }

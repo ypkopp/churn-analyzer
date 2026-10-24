@@ -48,6 +48,24 @@
       <div id="page-head"></div>
       <div id="notices"></div>
       <section class="kpis" id="kpis" aria-label="Сводные показатели"></section>
+      <section class="panel analytics" id="analytics" aria-label="Предстоящие продления и причины риска">
+        <div class="analytics__head">
+          <h2 class="analytics__title">Предстоящие продления и приоритеты</h2>
+          <p class="analytics__note">Даты — сроки окончания услуг из текущего батча, а не даты фактического оттока. Один клиент может иметь несколько причин.</p>
+        </div>
+        <div class="analytics__grid">
+          <div class="analytics__col">
+            <h3 class="analytics__sub">Ближайшие продления по датам</h3>
+            <div id="renewals-chart" class="renewals" role="list"></div>
+            <div id="renewals-empty" class="analytics__empty" hidden>В этом батче нет услуг с продлениями в горизонте.</div>
+          </div>
+          <div class="analytics__col">
+            <h3 class="analytics__sub">Причины риска</h3>
+            <div id="reasons-list" class="reasons" role="list"></div>
+            <div id="reasons-empty" class="analytics__empty" hidden>Причин для показа нет.</div>
+          </div>
+        </div>
+      </section>
       <section class="panel" aria-label="Таблица клиентов">
         <div class="toolbar" id="toolbar"></div>
         <div id="table-region"></div>

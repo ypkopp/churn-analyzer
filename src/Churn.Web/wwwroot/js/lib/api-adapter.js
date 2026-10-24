@@ -141,6 +141,21 @@
         snapshotVersion: r.data.snapshotVersion, modelVersion: r.data.modelVersion } });
     },
 
+    /* GET /api/v1/analytics/renewals — upcoming renewals + reason counts,
+       same published batch as summary (evaluationId/asOf/versions). */
+    async getRenewals() {
+      const r = await req("GET", "/api/v1/analytics/renewals");
+      if (!r.ok) return r;
+      if (r.data && r.data.state === "no_data")
+        return ok({ noData: true, buckets: [], reasons: [], horizonDays: 0 });
+      const d = r.data || {};
+      return ok({
+        noData: false, buckets: d.buckets || [], reasons: d.reasons || [],
+        horizonDays: d.horizonDays ?? 0,
+      }, { snapshot: { id: d.evaluationId, takenAt: d.asOf,
+        snapshotVersion: d.snapshotVersion, modelVersion: d.modelVersion } });
+    },
+
     /* GET /api/v1/model/settings */
     async getModelSettings() {
       const r = await req("GET", "/api/v1/model/settings");

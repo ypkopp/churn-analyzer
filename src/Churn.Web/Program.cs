@@ -331,6 +331,49 @@ app.MapGet("/api/v1/status", async (SnapshotStore store) =>
 var Jopts = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 static object Err(string e, string? d = null) => new ApiError(e, d);
 
+// --- analytics: upcoming renewals + explainable priorities -------------------
+// Serves ONLY the latest published batch (no recompute). Buckets are grouped
+// by the service expiry date (schedule, not a churn date); reasons count
+// distinct customers per feature code and a customer may carry several.
+app.MapGet("/api/v1/analytics/renewals", async (AppDb db) =>
+{
+    var run = await db.EvalRuns.OrderByDescending(r => r.CreatedAt).FirstOrDefaultAsync();
+    if (run is null) return Results.Ok(new { state = "no_data" });
+    var rows = await db.CustomerResults.Where(x => x.EvaluationId == run.EvaluationId).ToListAsync();
+
+    var buckets = new Dictionary<string, RenewalBucketDto>(StringComparer.Ordinal);
+    var reasonCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+    int horizon = 0;
+
+    foreach (var r in rows)
+    {
+        var dto = JsonSerializer.Deserialize<CustomerResultDto>(r.Payload, Jopts)!;
+        var level = dto.Rank.RiskLevel;
+        horizon = dto.Detail.Money?.HorizonDays ?? horizon;
+        foreach (var line in dto.Detail.Money?.Lines ?? (IReadOnlyList<MoneyLineDto>)Array.Empty<MoneyLineDto>())
+        {
+            var day = line.DueAt.ToString("yyyy-MM-dd");
+            if (!buckets.TryGetValue(day, out var b))
+                b = new RenewalBucketDto(day, 0, 0, 0, 0, 0);
+            buckets[day] = b with {
+                Overdue = b.Overdue + (line.Overdue ? 1 : 0),
+                High = b.High + (level == "high" ? 1 : 0),
+                Medium = b.Medium + (level == "medium" ? 1 : 0),
+                Low = b.Low + (level == "low" ? 1 : 0),
+                NoAssessment = b.NoAssessment + (level == "no_assessment" ? 1 : 0),
+            };
+        }
+        foreach (var code in dto.Rank.Reasons ?? (IReadOnlyList<string>)Array.Empty<string>())
+            reasonCounts[code] = reasonCounts.TryGetValue(code, out var n) ? n + 1 : 1;
+    }
+
+    var ordered = buckets.Values.OrderBy(b => b.Date).ToList();
+    var reasons = reasonCounts.OrderByDescending(k => k.Value).ThenBy(k => k.Key)
+        .Select(k => new ReasonCountDto(k.Key, k.Value)).ToList();
+    return Results.Ok(new RenewalsAnalyticsDto(ordered, reasons,
+        run.SnapshotVersion, run.ModelVersion, run.EvaluationId, run.AsOf, horizon));
+}).RequireAuthorization("AnalystOrAdmin");
+
 app.MapGet("/api/v1/customers", async (HttpContext http, AppDb db,
     string? q, string? sort, string? dir, string? riskLevel, int? page, int? pageSize) =>
 {

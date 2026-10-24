@@ -69,3 +69,25 @@ public sealed record ApiError(string Error, string? Detail = null);
 
 /// <summary>PATCH body for model settings with optimistic concurrency.</summary>
 public sealed record ModelSettingsPatch(int? ExpectedVersion, ModelSettingsDto Settings);
+
+// --- analytics: upcoming renewals + explainable priorities -------------------
+// Derived from ONE published batch; dates are service expiry dates, not churn.
+
+/// <summary>Renewals grouped by calendar day. Each bucket lists counts per
+/// risk level of the owning account plus an overdue flag — one bucket per
+/// service due date, not per generated period.</summary>
+public sealed record RenewalBucketDto(
+    string Date,            // yyyy-MM-dd of service expiry (schedule, not fact)
+    int Overdue,            // lines whose DueAt < batch asOf
+    int High, int Medium, int Low, int NoAssessment);
+
+/// <summary>A reason (feature code) and how many distinct customers carry it.
+/// A customer may carry several reasons — counts are not mutually exclusive
+/// and intentionally do not sum to the customer total.</summary>
+public sealed record ReasonCountDto(string Code, int Customers);
+
+public sealed record RenewalsAnalyticsDto(
+    IReadOnlyList<RenewalBucketDto> Buckets,
+    IReadOnlyList<ReasonCountDto> Reasons,
+    long SnapshotVersion, int ModelVersion, Guid EvaluationId, DateTimeOffset AsOf,
+    int HorizonDays);
