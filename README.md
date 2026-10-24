@@ -1,113 +1,165 @@
-# Churn Risk Analyzer — фундамент (A06)
+<div align="center">
 
-ASP.NET Core 10 + Razor Pages + JSON API + PostgreSQL, cookie-auth,
-атомарное хранение снимка и настроек, Docker Compose. Один процесс, без
-Redis/микросервисов.
+<img src="docs/assets/tethered-wordmark.svg" alt="Tethered" width="220" />
 
-## Требования
-- .NET SDK 10.0.401+
-- Docker Desktop с compose v2
-- PostgreSQL (через compose)
+# Tethered — анализатор рисков оттока
 
-## Файлы
-- `compose.yaml` — app + postgres (БД не публикуется наружу)
-- `Dockerfile` — multi-stage build/runtime
-- `.env.example` — безопасные примеры, не секреты
-- `.dockerignore` — исключает `.env`, `data/raw/`, `.git`
+ASP.NET Core 10 · Razor Pages + JSON API · PostgreSQL · Cookie-auth + CSRF · Docker Compose
 
-## Настройка
-```bash
-cp .env.example .env
-# отредактируйте .env: задайте POSTGRES_PASSWORD и ADMIN_PASSWORD
+**Живой стенд:** <https://hack-rnd.cc.cd>
+
+</div>
+
+---
+
+## Что это
+
+Панель для маркетолога: какие клиенты могут не продлить услуги, почему, и какая
+сумма ближайших продлений оказывается «под риском» в заданном горизонте.
+Один процесс приложения + PostgreSQL, без микросервисов, Redis и внешних очередей.
+
+> **Важно про смысл чисел.** Score — **эвристический индекс приоритета 0–100**,
+> а не вероятность оттока и не калиброванный прогноз. «Сценарная сумма под
+> риском» — ориентир суммы ближайших продлений с учётом балансов и уровня риска:
+> это **эвристический денежный индекс**, а не ожидаемая потеря и не экономия.
+> `no_assessment` (недостаток данных) — отдельное состояние, а не «низкий риск».
+
+## Скриншоты живого стенда
+
+| Экран | Снимок |
+|---|---|
+| Вход | ![login](docs/assets/screenshots/login-1440.png) |
+| Список клиентов (desktop 1440) | ![list](docs/assets/screenshots/customers-1440.png) |
+| Карточка клиента (drawer) | ![detail](docs/assets/screenshots/customers-drawer.png) |
+| Сводка (mobile 390) | ![mobile](docs/assets/screenshots/customers-390.png) |
+| Раскладка 760 px | ![760](docs/assets/screenshots/customers-760.png) |
+
+Снимки сняты с реального HTTPS-стенда на синтетических данных `example.test`
+(см. раздел про фикстуру). Это не макет.
+
+## Возможности (проверено на стенде)
+
+- Cookie-auth с HttpOnly + SameSite=Strict; CSRF-токен `X-CSRF-TOKEN` для
+  всех изменяющих запросов; rate-limit на login.
+- Таблица клиентов: поиск по ID/email, фильтр по уровню риска со счётчиками,
+  сортировка по ID/email/балансу/пополнениям/score в обе стороны,
+  «без оценки» в конце при любом ключе.
+- Карточка клиента: причины риска, вклады факторов, услуги и сроки,
+  денежный разбор, транзакции, индикатор лояльности (производный `100 − score`,
+  не измеренное поведение).
+- Единая оценочная версия (`evaluationId` + `snapshotVersion` + `modelVersion`
+  + `asOf`) у списка, карточки и сводки — UI никогда не смешивает батчи.
+- `PUT /api/v1/source/snapshot` — атомарная замена снимка + пересчёт.
+- `PATCH /api/v1/model/settings` — коэффициенты/пороги с optimistic concurrency
+  (`expectedVersion` → `409` при конфликте) и пересчётом. Настройки переживают
+  рестарт.
+- Фоновый пересчёт по таймеру (`Eval:RefreshSeconds`) публикует новый батч,
+  не меняя версий; UI обновляется по смене `evaluationId` без перезагрузки.
+- Prometheus `/metrics` и Swagger UI `/api/v1/docs` — **только за auth**.
+- Ротация пароля администратора: `POST /api/v1/auth/rotate-password`
+  (проверяет текущий, штатный PBKDF2-хеш, без удаления БД).
+
+## Архитектура
+
+```
+            ┌─────────────┐   HTTPS    ┌───────────────────────────┐
+  клиент →  │ Caddy (TLS) │ ────────▶  │  Churn.Web (ASP.NET Core) │
+            └─────────────┘  loopback  │  Razor Pages + JSON API   │
+              80/443                   │  cookie-auth, CSRF        │
+                                       │  EvaluationService (1 tx) │
+                                       └────────────┬──────────────┘
+                                                    │ EF Core (Npgsql)
+                                            ┌───────▼────────┐
+                                            │  PostgreSQL 17 │
+                                            │ snapshots,     │
+                                            │ model_settings,│
+                                            │ eval_runs,     │
+                                            │ results        │
+                                            └────────────────┘
 ```
 
-## Запуск
+- Оценка — синхронная, публикуется одним батчем в одной транзакции
+  (`eval_runs` + `customer_results` + `summary_results`). Неудачный прогон
+  ничего не коммитит — последний хороший батч остаётся авторитетным.
+- Чтения (`customers`, `customer/{id}`, `summary`, `metrics`) берут только
+  последний опубликованный батч — они не запускают пересчёт.
+- `asOf` всегда приходит из `TimeProvider` (System/Fake в тестах).
+
+## Модель риска и денежная оценка
+
+Признаки (веса версионируются в `model_settings`):
+
+- `expiring_no_autoprolong` — услуга истекает в горизонте без автопродления;
+- `insufficient_funds` — баланса не хватает на ближайшие продления;
+- `prolong_wait` — услуга ждёт оплаты;
+- `suspended` — услуга приостановлена (не равна отсутствию выручки).
+
+Score = взвешенная сумма вкладов → уровень по порогам `high`/`medium`.
+`no_assessment` — когда данных недостаточно для оценки.
+
+Деньги (всегда в **евроцентах**, без float): в горизонте считается стоимость
+продлений, доступный покрывающий фонд распределяется один раз на набор продлений
+(бонус учитывается только при `bonusState=unlocked`; `withdrawBalance` не
+расходуется автоматически). `at_risk` — сценарная сумма под риском с тегом
+`semantic="heuristic_money_index"`. Это ограничение подчёркнуто в UI.
+
+## Данные (фикстура)
+
+`data/raw/` — официальная синтетическая фикстура кейса: `data.json` (10 аккаунтов,
+30 услуг, 100 транзакций), SQL-схема и сид, генератор `generate.py` и его тест.
+Все email — на домене `example.test`; реальных персональных данных нет.
+Стенд развёрнут именно с этим снапшотом, а не восстановлением локальной БД.
+
+## Запуск и bootstrap
+
 ```bash
+cp .env.example .env          # задайте POSTGRES_PASSWORD и ADMIN_PASSWORD
 docker compose up -d --build
 ```
-Миграции применяются автоматически при старте приложения к пустой БД.
-Первый admin-пользователь создаётся только если `Auth:AdminPassword` задан
-и пользователя ещё нет — без универсального пароля по умолчанию.
 
-## Проверка
-- `GET /healthz/live` — процесс жив
-- `GET /healthz/ready` — БД доступна
-- `POST /api/v1/auth/login` + `GET /api/v1/auth/me` + `POST /api/v1/auth/logout`
-- защищённые API без сессии → 401 (не HTML-редирект)
-- UI: `/login` → `/customers` → карточка клиента → настройки → источник данных → выход
+- Миграции применяются при старте.
+- Первый admin создаётся только если `Auth:AdminPassword` задан и такого
+  пользователя ещё нет — универсального пароля по умолчанию нет.
+- Bootstrap снимка — один раз, если задан `BOOTSTRAP_SEED_FILE` и снимка ещё
+  нет в БД (на стенде — `./seed/data.json` примонтирован read-only).
+- В production перед приложением стоит reverse proxy; `HTTPS_ENABLED=true`
+  включает `Secure`-флаг cookie, а `UseForwardedHeaders` доверяет только
+  заголовкам от прокси внутри сети compose.
 
-## API (A07/A08)
+## API
+
 | Endpoint | Назначение |
 |---|---|
-| `GET /api/v1/customers?q=&riskLevel=&sort=&dir=` | рейтинг клиентов (score/level/reasons, batch identity) |
-| `GET /api/v1/customers/{id}` | карточка: причины, вклады, услуги, денежный разбор |
-| `GET /api/v1/analytics/summary` | сводка рисков и денежной оценки (та же оценочная версия) |
-| `GET /api/v1/model/settings` | текущие коэффициенты + modelVersion |
-| `PATCH /api/v1/model/settings` | `{expectedVersion, settings}` → 409 при конфликте, иначе пересчёт |
-| `PUT /api/v1/source/snapshot` | атомарная замена снимка + пересчёт |
-| `GET /api/v1/auth/csrf` | CSRF-токен для изменяющих запросов |
-| `GET /api/v1/ui-config` | интервал polling UI (отдельно от пересчёта) |
-| `GET /metrics` | защищённый Prometheus text exposition из последнего опубликованного батча |
-| `/api/v1/docs` | защищённые Swagger UI и OpenAPI JSON (`/api/v1/docs/v1.json`) |
+| `POST /api/v1/auth/login` / `logout` / `me` / `csrf` | сессия, CSRF-токен |
+| `POST /api/v1/auth/rotate-password` | смена пароля (current+new, auth+CSRF) |
+| `GET /api/v1/customers` | рейтинг + batch identity |
+| `GET /api/v1/customers/{id}` | карточка клиента |
+| `GET /api/v1/analytics/summary` | сводка (та же оценочная версия) |
+| `GET/PATCH /api/v1/model/settings` | коэффициенты + optimistic concurrency |
+| `PUT /api/v1/source/snapshot` | атомарная замена снимка |
+| `GET /api/v1/ui-config` | интервал polling UI |
+| `GET /metrics` | Prometheus (только за auth) |
+| `GET /api/v1/docs` | Swagger UI; spec `GET /api/v1/docs/v1.json` |
 
-## Обновление UI без reload
-Экран клиентов опрашивает сводку с интервалом `Ui:PollSeconds` (по умолчанию 15 с;
-конфигурируется, независимо от `Eval:RefreshSeconds` пересчёта). Таблица и сводка
-обновляются только при смене `evaluationId` — версии не смешиваются, поиск/фильтры/
-фокус и открытая карточка не сбрасываются.
+Документация: `docs/openapi-draft.yaml`, `docs/ARCHITECTURE.md`,
+`docs/MODEL-CONTRACT.md`.
 
-## Остановка
-```bash
-docker compose down          # останавливает, сохраняет volume
-docker compose down -v       # удаляет volume (только для тестового окружения)
-```
+## Проверено на стенде
 
-## Одноразовый bootstrap снимка (явный, не каждый рестарт)
-Снимок импортируется один раз, только если `Bootstrap:SeedFile` задан и
-снимка ещё нет в БД. Он НЕ перезаписывает существующий и не подставляет
-дефолтные настройки поверх сохранённых.
-```bash
-# 1. Задайте в .env путь, который существует ВНУТРИ app-контейнера:
-BOOTSTRAP_SEED_FILE=/seed/data.json
-# 2. Запустите приложение (если файла ещё нет, импорт будет пропущен):
-docker compose up -d
-# 3. Скопируйте выбранный JSON в уже созданный контейнер:
-docker compose cp data/raw/data.json app:/seed/data.json
-# 4. Явно перезапустите app: при этом выполнится единственный импорт:
-docker compose restart app
-# После успешного импорта очистите BOOTSTRAP_SEED_FILE и перезапустите app.
-```
-Альтернатива для уже запущенного приложения — аутентифицированный
-`PUT /api/v1/source/snapshot` с CSRF-токеном; замена атомарна.
-Настройки сохраняются через `PATCH /api/v1/model/settings` и доступны через
-`GET /api/v1/model/settings`.
+- `dotnet build` — 0 предупреждений; `tests/Churn.Core.Tests` — 68/68.
+- Живой HTTPS: login→customers→detail→PATCH→новый `evaluationId`.
+- `/metrics`, `/api/v1/docs`, `v1.json` — `401` анониму, `200` за auth.
+- PATCH без CSRF → `403`; с `X-CSRF-TOKEN` → `200`.
+- Cookie: `Secure; HttpOnly; SameSite=Strict` при HTTPS.
+- `rotate-password` → `204`; старый пароль `401`, новый `204`.
+- Прямой порт приложения недоступен извне — только loopback/сеть compose.
 
-## Безопасность
-- cookie HttpOnly, SameSite=Strict, Secure в HTTPS-режиме
-- CSRF-токен `X-CSRF-TOKEN` для изменяющих запросов
-- rate-limit login (5/мин)
-- пароль хешируется (PBKDF2, ASP.NET Core Identity)
-- Data Protection keys — в volume `dpkeys` вне эфемерного контейнера
+## Ограничения
 
-## A08R: мобильная навигация
-На ширинах до 760px навигация — модальное меню с тем же градиентом и SVG-зубчатой
-кромкой Tethered. Закрытие доступно повторным нажатием hamburger, кнопкой
-«Закрыть меню» внутри панели, кликом по backdrop и Escape. При открытии фон
-блокируется и прокрутка сохраняется; после закрытия фокус возвращается к hamburger.
-Переход в desktop при открытом меню очищает scroll-lock и backdrop.
-
-## Проверка браузером
-Проверено на реальном `http://localhost:8080` с PostgreSQL:
-- 390px и 760px: открыть/закрыть hamburger, close button, backdrop, Escape;
-- 3 последовательных цикла открытия/закрытия;
-- меню → «Настройки модели»: nav закрывается до открытия модалки;
-- resize mobile→desktop→mobile: lock/backdrop очищаются, меню снова открывается;
-- 1180/1440: nav видим, mobile close button скрыта;
-- reduced-motion: motion-токены обнулены, управление работает;
-- console errors и failed requests: 0.
-Скриншот настоящего открытого мобильного меню: `design-reference/screenshots/a08r-mobile-open.png`.
-## Ограничения прототипа
-- нет Grafana и OIDC;
-- расчёт остаётся эвристическим индексом: score не является вероятностью оттока;
-- Swagger/OpenAPI и Prometheus endpoint требуют аутентификацию;
-- браузерный integration suite требует доступного Docker Desktop с Linux engine.
+- Score — индекс, не вероятность; истории смены статусов в данных нет,
+  поэтому accuracy/AUC не заявляются.
+- Сессии, выданные до смены пароля, остаются валидными (cookie sliding, без
+  списка отзыва).
+- Интеграционные тесты требуют Docker+Testcontainers; в этом окружении
+  (локальный Docker) они не запускались.
+- Нет Grafana и OIDC; экспорт CSV и загрузка снимка из UI — не реализованы.
