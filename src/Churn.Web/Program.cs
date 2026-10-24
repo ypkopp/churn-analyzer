@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -102,6 +103,25 @@ builder.Services.AddRazorPages();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+builder.Services.Configure<ForwardedHeadersOptions>(o =>
+{
+    // Trust only the known reverse-proxy hop inside the compose network.
+    // Forwarded headers from arbitrary internet clients must not be honored.
+    o.ForwardedHeaders = ForwardedHeaders.XForwardedFor
+        | ForwardedHeaders.XForwardedProto
+        | ForwardedHeaders.XForwardedHost;
+    o.ForwardLimit = 1;
+    // Restrict to the compose network subnet (and loopback for local runs).
+    o.KnownIPNetworks.Clear();
+    o.KnownProxies.Clear();
+    o.KnownIPNetworks.Add(new System.Net.IPNetwork(
+        System.Net.IPAddress.Parse("172.18.0.0"), 16));
+    o.KnownIPNetworks.Add(new System.Net.IPNetwork(
+        System.Net.IPAddress.Parse("10.0.0.0"), 8));
+    o.KnownProxies.Add(System.Net.IPAddress.Loopback);
+    o.KnownProxies.Add(System.Net.IPAddress.IPv6Loopback);
+});
+
 var app = builder.Build();
 
 // --- migrate + optional one-shot bootstrap --------------------------------
@@ -135,6 +155,7 @@ await using (var scope = app.Services.CreateAsyncScope())
 }
 
 app.UseRateLimiter();
+app.UseForwardedHeaders();
 app.UseStaticFiles();          // wwwroot: css/js/img (tokens, components, brand)
 app.UseAuthentication();
 app.UseAuthorization();
