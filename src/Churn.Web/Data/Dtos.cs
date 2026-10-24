@@ -25,5 +25,7 @@ public sealed record ModelSettingsDto(int ModelVersion, int HorizonDays,
     Dictionary<string, int> Weights, Dictionary<string, int> Thresholds);
 
 public sealed record LoginRequest(string Login, string Password);
-public sealed record MeResponse(string Login);
+public sealed record MeResponse(string Login, string Role);
 public sealed record RotatePasswordRequest(string CurrentPassword, string NewPassword);
+public sealed record CreateUserRequest(string Login, string Password, string Role);
+public sealed record SetUserStatusRequest(bool Disabled);

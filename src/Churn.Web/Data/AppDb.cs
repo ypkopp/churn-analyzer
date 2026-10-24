@@ -41,6 +41,9 @@ public sealed class AppDb(DbContextOptions<AppDb> options) : DbContext(options)
             e.HasIndex(x => x.Login).IsUnique();
             e.Property(x => x.Login).IsRequired();
             e.Property(x => x.PasswordHash).IsRequired();
+            e.Property(x => x.Role).IsRequired().HasDefaultValue(UserRoles.Analyst);
+            e.Property(x => x.Disabled).IsRequired();
+            e.Property(x => x.SecurityStamp).IsRequired().HasDefaultValue("");
         });
         b.Entity<EvalRun>(e =>
         {
@@ -92,7 +95,20 @@ public sealed class AppUser
     public long Id { get; set; }
     public string Login { get; set; } = "";
     public string PasswordHash { get; set; } = "";
+    /// <summary>"admin" | "analyst" — drives server-side authorization.</summary>
+    public string Role { get; set; } = UserRoles.Analyst;
+    /// <summary>True = cannot log in and existing sessions are rejected.</summary>
+    public bool Disabled { get; set; }
+    /// <summary>Bumped on password change / disable; embedded in the auth
+    /// cookie. A request whose stamp is stale is signed out server-side.</summary>
+    public string SecurityStamp { get; set; } = "";
     public DateTimeOffset CreatedAt { get; set; }
+}
+
+public static class UserRoles
+{
+    public const string Admin = "admin";
+    public const string Analyst = "analyst";
 }
 
 /// <summary>One evaluation batch: all results share evaluationId+asOf+versions.</summary>

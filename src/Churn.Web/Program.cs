@@ -69,11 +69,26 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
             { ctx.Response.StatusCode = 403; return Task.CompletedTask; }
             ctx.Response.Redirect(ctx.RedirectUri); return Task.CompletedTask;
         };
+        // Server-side session revocation: every request re-checks the user's
+        // security stamp and Disabled flag against the DB. A cookie issued
+        // before a password change or disable is rejected — clearing only the
+        // local cookie would not be enough.
+        o.Events.OnValidatePrincipal = async ctx =>
+        {
+            var db = ctx.HttpContext.RequestServices.GetRequiredService<AppDb>();
+            var name = ctx.Principal?.Identity?.Name;
+            var stamp = ctx.Principal?.FindFirst("stamp")?.Value;
+            if (string.IsNullOrEmpty(name)) { ctx.RejectPrincipal(); return; }
+            var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Login == name);
+            if (user is null || user.Disabled || user.SecurityStamp != stamp)
+            { ctx.RejectPrincipal(); await ctx.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme); }
+        };
     });
 builder.Services.AddAuthorization(o =>
 {
-    // Endpoints that must never be reachable anonymously — cookie-auth spec surface.
     o.AddPolicy("AuthenticatedOnly", p => p.RequireAuthenticatedUser());
+    o.AddPolicy("AdminOnly", p => p.RequireRole(UserRoles.Admin));
+    o.AddPolicy("AnalystOrAdmin", p => p.RequireRole(UserRoles.Admin, UserRoles.Analyst));
 });
 builder.Services.AddAntiforgery(o => { o.HeaderName = "X-CSRF-TOKEN"; o.Cookie.Name = "churn.csrf"; });
 
@@ -130,14 +145,25 @@ await using (var scope = app.Services.CreateAsyncScope())
     var db = scope.ServiceProvider.GetRequiredService<AppDb>();
     await db.Database.MigrateAsync();
 
-    // initial admin user from config (hashed), only if none exists
+    // initial admin user from config (hashed), only if none exists — bootstrap
+    // mechanism only; env password is NOT re-applied to existing users.
     if (!string.IsNullOrEmpty(adminPassword) && !await db.Users.AnyAsync(u => u.Login == adminLogin))
     {
         var hasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher<AppUser>>();
-        var u = new AppUser { Login = adminLogin, CreatedAt = TimeProvider.System.GetUtcNow() };
+        var u = new AppUser { Login = adminLogin, Role = UserRoles.Admin,
+            CreatedAt = TimeProvider.System.GetUtcNow(),
+            SecurityStamp = Guid.NewGuid().ToString("N") };
         u.PasswordHash = hasher.HashPassword(u, adminPassword);
         db.Users.Add(u);
         await db.SaveChangesAsync();
+    }
+    // existing bootstrap admin (created before roles) gets Admin + a stamp once
+    else if (await db.Users.FirstOrDefaultAsync(u => u.Login == adminLogin) is { } existing)
+    {
+        var dirty = false;
+        if (existing.Role != UserRoles.Admin) { existing.Role = UserRoles.Admin; dirty = true; }
+        if (string.IsNullOrEmpty(existing.SecurityStamp)) { existing.SecurityStamp = Guid.NewGuid().ToString("N"); dirty = true; }
+        if (dirty) await db.SaveChangesAsync();
     }
 
     // optional one-shot bootstrap import (explicit, not on every restart)
@@ -197,11 +223,15 @@ app.MapPost("/api/v1/auth/login", async (HttpContext http, AppDb db,
     IPasswordHasher<AppUser> hasher, LoginRequest req) =>
 {
     var user = await db.Users.FirstOrDefaultAsync(u => u.Login == req.Login);
-    var ok = user is not null &&
+    var ok = user is not null && !user.Disabled &&
         hasher.VerifyHashedPassword(user, user.PasswordHash, req.Password)
             != PasswordVerificationResult.Failed;
-    if (!ok) return Results.Unauthorized();   // don't reveal user existence
-    var claims = new[] { new Claim(ClaimTypes.Name, user!.Login) };
+    if (!ok) return Results.Unauthorized();   // don't reveal user existence / disabled state
+    var claims = new[] {
+        new Claim(ClaimTypes.Name, user!.Login),
+        new Claim(ClaimTypes.Role, user.Role),
+        new Claim("stamp", user.SecurityStamp),
+    };
     var id = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
     await http.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme,
         new ClaimsPrincipal(id));
@@ -210,7 +240,7 @@ app.MapPost("/api/v1/auth/login", async (HttpContext http, AppDb db,
 
 app.MapGet("/api/v1/auth/me", (ClaimsPrincipal p) =>
     p.Identity?.IsAuthenticated == true
-        ? Results.Ok(new MeResponse(p.Identity.Name ?? ""))
+        ? Results.Ok(new MeResponse(p.Identity.Name ?? "", p.FindFirst(ClaimTypes.Role)?.Value ?? ""))
         : Results.Unauthorized());
 
 app.MapPost("/api/v1/auth/logout", async (HttpContext http) =>
@@ -237,9 +267,53 @@ app.MapPost("/api/v1/auth/rotate-password", async (HttpContext http, AppDb db,
     if (string.IsNullOrWhiteSpace(req.NewPassword) || req.NewPassword.Length < 10)
         return Results.BadRequest(Err("weak_password", "min 10 chars"));
     user.PasswordHash = hasher.HashPassword(user, req.NewPassword);
+    user.SecurityStamp = Guid.NewGuid().ToString("N");   // revoke other sessions
     await db.SaveChangesAsync();
     return Results.NoContent();
 }).RequireAuthorization();
+
+// --- admin: employee management (Admin role only) ---------------------------
+app.MapGet("/api/v1/admin/users", async (AppDb db) =>
+{
+    var users = await db.Users.AsNoTracking().OrderBy(u => u.Login)
+        .Select(u => new { u.Id, u.Login, u.Role, u.Disabled, u.CreatedAt }).ToListAsync();
+    return Results.Ok(users);
+}).RequireAuthorization("AdminOnly");
+
+// create employee — admin sets a temporary password; role is admin|analyst.
+app.MapPost("/api/v1/admin/users", async (AppDb db,
+    IPasswordHasher<AppUser> hasher, ClaimsPrincipal p, CreateUserRequest req) =>
+{
+    if (string.IsNullOrWhiteSpace(req.Login) || req.Login.Length < 2)
+        return Results.BadRequest(Err("invalid_login", "min 2 chars"));
+    if (req.Role != UserRoles.Admin && req.Role != UserRoles.Analyst)
+        return Results.BadRequest(Err("invalid_role", "admin|analyst"));
+    if (string.IsNullOrWhiteSpace(req.Password) || req.Password.Length < 10)
+        return Results.BadRequest(Err("weak_password", "min 10 chars"));
+    if (await db.Users.AnyAsync(u => u.Login == req.Login))
+        return Results.Conflict(Err("duplicate_login", "user exists"));
+    var u = new AppUser { Login = req.Login, Role = req.Role,
+        CreatedAt = TimeProvider.System.GetUtcNow(),
+        SecurityStamp = Guid.NewGuid().ToString("N") };
+    u.PasswordHash = hasher.HashPassword(u, req.Password);
+    db.Users.Add(u); await db.SaveChangesAsync();
+    return Results.Created($"/api/v1/admin/users/{u.Id}", new { u.Id, u.Login, u.Role });
+}).RequireAuthorization("AdminOnly");
+
+// enable/disable an account — admin only; a disabled user cannot log in and
+// their existing cookies are rejected on the next request (stamp check).
+app.MapPatch("/api/v1/admin/users/{id:long}/status", async (long id, AppDb db,
+    ClaimsPrincipal p, SetUserStatusRequest req) =>
+{
+    var user = await db.Users.FirstOrDefaultAsync(u => u.Id == id);
+    if (user is null) return Results.NotFound(Err("not_found", "user"));
+    // an admin cannot disable themselves — prevents lockout
+    if (user.Login == p.Identity?.Name) return Results.BadRequest(Err("self_disable", "cannot disable own account"));
+    user.Disabled = req.Disabled;
+    if (req.Disabled) user.SecurityStamp = Guid.NewGuid().ToString("N"); // revoke sessions
+    await db.SaveChangesAsync();
+    return Results.NoContent();
+}).RequireAuthorization("AdminOnly");
 
 // minimal protected status endpoint (foundation — not full customers API)
 app.MapGet("/api/v1/status", async (SnapshotStore store) =>
@@ -338,6 +412,7 @@ app.MapGet("/api/v1/analytics/summary", async (AppDb db) =>
 }).RequireAuthorization();
 
 // --- snapshot: atomic replace + version, then re-evaluate -------------------
+// Only Admin may replace the source snapshot.
 app.MapPut("/api/v1/source/snapshot", async (SnapshotStore store,
     Churn.Web.Services.EvaluationService eval, SourceSnapshotDto snap) =>
 {
@@ -345,7 +420,7 @@ app.MapPut("/api/v1/source/snapshot", async (SnapshotStore store,
     if (!ok) return Results.BadRequest(Err("invalid_snapshot", error));
     var run = await eval.EvaluateAndPublishAsync();
     return Results.Ok(new { snapshotVersion = version, run?.EvaluationId, run?.AsOf });
-}).RequireAuthorization();
+}).RequireAuthorization("AdminOnly");
 
 // --- model settings: optimistic concurrency via expectedVersion -------------
 app.MapGet("/api/v1/model/settings", async (SnapshotStore store) =>
@@ -375,7 +450,7 @@ app.MapPatch("/api/v1/model/settings", async (SnapshotStore store,
     if (!ok) return Results.BadRequest(Err("invalid_settings", error));
     var run = await eval.EvaluateAndPublishAsync();
     return Results.Ok(new { modelVersion = row!.ModelVersion, run?.EvaluationId, run?.AsOf });
-}).RequireAuthorization();
+}).RequireAuthorization("AnalystOrAdmin");
 
 // --- /metrics: Prometheus exposition from the latest PUBLISHED batch --------
 // Values all come from ONE eval run — no recalculation on scrape.
