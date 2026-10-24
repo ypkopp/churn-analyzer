@@ -1,0 +1,42 @@
+# Secrets & env — never into the image
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+
+# Raw source data & dumps — data stays out of the image
+data/raw/
+*.har
+exports/
+dumps/
+*.dump
+
+# Version control & tooling
+.git
+.gitignore
+.gitattributes
+.agents/
+.claude/
+.vs/
+.vscode/
+
+# Build artifacts
+**/bin/
+**/obj/
+**/out/
+node_modules/
+
+# Tests & docs not needed in the runtime image
+tests/
+docs/
+data-profile.json
+*.md
+!README.md
+Dockerfile
+compose.yaml
+.dockerignore
+
+# Logs
+*.log
+logs/

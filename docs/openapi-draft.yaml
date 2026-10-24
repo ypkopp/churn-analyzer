@@ -1,0 +1,335 @@
+openapi: 3.0.3
+info:
+  title: Churn Risk Analyzer API
+  version: "0.1.0-draft"
+  description: >
+    Draft contract (A02). Money values are integer EUR cents. All risk outputs carry
+    snapshotVersion, modelVersion and evaluatedAt (asOf). riskScore is a priority
+    index, not a probability. This is a draft — the product is not implemented.
+servers:
+  - url: /
+
+paths:
+  /api/v1/auth/login:
+    post:
+      summary: Вход по логину и паролю (cookie session)
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [login, password]
+              properties:
+                login: { type: string }
+                password: { type: string, format: password }
+      responses:
+        "204": { description: Успешный вход, cookie сессии установлена }
+        "401": { description: Неверные учётные данные }
+        "403": { description: Отсутствует/недействителен CSRF-токен }
+
+  /api/v1/auth/me:
+    get:
+      summary: Текущий аутентифицированный пользователь
+      tags: [auth]
+      responses:
+        "200":
+          description: Текущий пользователь
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  login: { type: string }
+        "401": { description: Не аутентифицирован }
+
+  /api/v1/auth/logout:
+    post:
+      summary: Завершение текущей сессии
+      tags: [auth]
+      responses:
+        "204": { description: Сессия завершена }
+        "401": { description: Не аутентифицирован }
+        "403": { description: CSRF }
+
+  /api/v1/customers:
+    get:
+      summary: Список клиентов с оценками риска; фильтрация и сортировка рейтинга
+      tags: [customers]
+      parameters:
+        - { name: sort, in: query, schema: { type: string, enum: [id, email, balance, totalReplenished, riskScore] }, description: Поле сортировки }
+        - { name: dir, in: query, schema: { type: string, enum: [asc, desc], default: asc } }
+        - { name: riskLevel, in: query, schema: { type: string, enum: [high, medium, low, no_assessment] } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, default: 50, maximum: 500 } }
+      responses:
+        "200":
+          description: Страница рейтинга
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, snapshotVersion, modelVersion, evaluatedAt]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/CustomerRank" }
+                  total: { type: integer }
+                  snapshotVersion: { type: integer }
+                  modelVersion: { type: integer }
+                  evaluatedAt: { type: string, format: date-time }
+        "401": { description: Не аутентифицирован }
+
+  /api/v1/customers/{id}:
+    get:
+      summary: Подробная оценка клиента, его услуги, признаки и объяснения
+      tags: [customers]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Деталь клиента
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CustomerDetail" }
+        "404": { description: Клиент не найден в текущем снапшоте }
+        "401": { description: Не аутентифицирован }
+
+  /api/v1/analytics/summary:
+    get:
+      summary: Сводные показатели риска и денежной оценки
+      tags: [analytics]
+      responses:
+        "200":
+          description: Сводка
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AnalyticsSummary" }
+        "401": { description: Не аутентифицирован }
+
+  /api/v1/model/settings:
+    get:
+      summary: Действующие настройки и коэффициенты модели
+      tags: [model]
+      responses:
+        "200":
+          description: Настройки
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelSettings" }
+        "401": { description: Не аутентифицирован }
+    patch:
+      summary: Изменение настроек модели с автоматическим пересчётом (optimistic concurrency)
+      description: >
+        Optimistic concurrency: body carries expectedVersion (the modelVersion the
+        caller last saw). A mismatch returns 409 — the newer state is not silently
+        overwritten. On success modelVersion increments and a new evaluation batch
+        (new evaluationId) is published.
+      tags: [model]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ModelSettingsPatchEnvelope" }
+      responses:
+        "200":
+          description: Сохранённые настройки + новый evaluationId
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  modelVersion: { type: integer }
+                  evaluationId: { type: string, format: uuid }
+                  asOf: { type: string, format: date-time }
+        "400": { description: Невалидные коэффициенты/пороги }
+        "401": { description: Не аутентифицирован }
+        "403": { description: CSRF }
+        "409": { description: "Конфликт версий: expectedVersion != current" }
+
+  /api/v1/source/snapshot:
+    put:
+      summary: Загрузка/полная атомарная замена снимка исходных данных + пересчёт
+      tags: [source]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SourceSnapshot" }
+      responses:
+        "200":
+          description: Снапшот принят; новый snapshotVersion
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  snapshotVersion: { type: integer }
+                  evaluatedAt: { type: string, format: date-time }
+        "400": { description: Снапшот отклонён (нарушена целостность); старый снапшот сохранён }
+        "401": { description: Не аутентифицирован }
+        "403": { description: CSRF }
+
+  /metrics:
+    get:
+      summary: Агрегированные метрики в формате Prometheus
+      tags: [ops]
+      responses:
+        "200":
+          description: Prometheus text exposition
+          content:
+            text/plain:
+              schema: { type: string }
+        "401": { description: Защищённый технический endpoint }
+        "403": { description: Запрещено для данного источника }
+
+  /api/v1/docs:
+    get:
+      summary: Swagger UI с рабочей документацией
+      tags: [ops]
+      responses:
+        "200": { description: Swagger UI }
+        "401": { description: Защищённый технический endpoint }
+        "403": { description: Запрещено для данного источника }
+
+components:
+  schemas:
+    CustomerRank:
+      type: object
+      required: [accountId, email, balance, totalReplenished, riskScore, riskLevel, reasons, snapshotVersion, modelVersion, evaluatedAt]
+      properties:
+        accountId: { type: integer }
+        email: { type: string, description: "PII: only for authenticated marketing users" }
+        balance: { type: integer, description: EUR cents }
+        totalReplenished: { type: integer, description: EUR cents }
+        riskScore: { type: integer, description: "priority index, not probability" }
+        riskLevel: { type: string, enum: [high, medium, low, no_assessment] }
+        reasons: { type: array, items: { type: string } }
+        snapshotVersion: { type: integer }
+        modelVersion: { type: integer }
+        evaluatedAt: { type: string, format: date-time }
+
+    CustomerDetail:
+      type: object
+      properties:
+        account: { $ref: "#/components/schemas/CustomerRank" }
+        services:
+          type: array
+          items: { $ref: "#/components/schemas/Service" }
+        features:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              value: { type: string }
+              contribution: { type: number }
+        explanations: { type: array, items: { type: string } }
+        noAssessment: { type: boolean }
+
+    AnalyticsSummary:
+      type: object
+      required: [countsByRisk, money, snapshotVersion, modelVersion, evaluatedAt]
+      properties:
+        countsByRisk:
+          type: object
+          properties:
+            high: { type: integer }
+            medium: { type: integer }
+            low: { type: integer }
+            no_assessment: { type: integer }
+        money:
+          type: object
+          properties:
+            unit: { type: string, enum: [EUR_cents] }
+            atRiskAmount: { type: integer, description: "heuristic index, not expected loss" }
+            balanceDeficit: { type: integer }
+            horizonDays: { type: integer }
+            semantic: { type: string, description: "meaning tag, e.g. heuristic_money_index" }
+        snapshotVersion: { type: integer }
+        modelVersion: { type: integer }
+        evaluatedAt: { type: string, format: date-time }
+
+    ModelSettings:
+      type: object
+      required: [modelVersion, weights, thresholds, horizonDays]
+      properties:
+        modelVersion: { type: integer }
+        weights:
+          type: object
+          additionalProperties: { type: number }
+        thresholds:
+          type: object
+          additionalProperties: { type: number }
+        horizonDays: { type: integer }
+        levels: { type: array, items: { type: string } }
+
+    ModelSettingsPatchEnvelope:
+      type: object
+      required: [settings]
+      properties:
+        expectedVersion:
+          type: integer
+          nullable: true
+          description: "modelVersion the caller last saw; mismatch -> 409"
+        settings: { $ref: "#/components/schemas/ModelSettings" }
+
+    ModelSettingsPatch:
+      type: object
+      properties:
+        weights: { type: object, additionalProperties: { type: number } }
+        thresholds: { type: object, additionalProperties: { type: number } }
+        horizonDays: { type: integer }
+
+    SourceSnapshot:
+      type: object
+      required: [accounts, services, transactions]
+      properties:
+        accounts:
+          type: array
+          items: { $ref: "#/components/schemas/Account" }
+        services:
+          type: array
+          items: { $ref: "#/components/schemas/Service" }
+        transactions:
+          type: array
+          items: { $ref: "#/components/schemas/Transaction" }
+
+    Account:
+      type: object
+      required: [id, email, balance, withdrawBalance, totalReplenished, bonusBalance, bonusState]
+      properties:
+        id: { type: integer }
+        email: { type: string }
+        balance: { type: integer, description: EUR cents }
+        withdrawBalance: { type: integer, description: EUR cents }
+        totalReplenished: { type: integer, description: EUR cents }
+        bonusBalance: { type: integer, description: EUR cents }
+        bonusState: { type: string, enum: [locked, unlocked] }
+
+    Service:
+      type: object
+      required: [id, name, ownerId, paymentTerm, autoProlong, createdAt, expiresAt, status, price]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        ownerId: { type: integer }
+        paymentTerm: { type: string, enum: [hour, week, month, quarter_year, half_year, year] }
+        autoProlong: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        status: { type: string, enum: [active, blocked, deleted, suspended, prolong_wait] }
+        price: { type: integer, description: EUR cents }
+
+    Transaction:
+      type: object
+      required: [id, amount, status, createdAt, type, serviceId]
+      properties:
+        id: { type: integer }
+        amount: { type: integer, minimum: 0, maximum: 1000 }
+        status: { type: string, enum: [not_performed, performed] }
+        performedAt: { type: [string, "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+        type: { type: string, enum: [prolong, order] }
+        serviceId: { type: integer }

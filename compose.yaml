@@ -1,0 +1,45 @@
+name: churn-analyzer
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-churn}
+      POSTGRES_USER: ${POSTGRES_USER:-churn}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # NOT published to host — internal network only
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ConnectionStrings__Db: Host=db;Port=5432;Database=${POSTGRES_DB:-churn};Username=${POSTGRES_USER:-churn};Password=${POSTGRES_PASSWORD}
+      Auth__AdminLogin: ${ADMIN_LOGIN:-admin}
+      Auth__AdminPassword: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
+      DataProtection__KeysPath: /app/keys
+      Https__Enabled: ${HTTPS_ENABLED:-false}
+      # Optional one-shot bootstrap of the fixture snapshot (explicit, not per-restart)
+      Bootstrap__SeedFile: ${BOOTSTRAP_SEED_FILE:-}
+      # Periodic re-evaluation interval (seconds). 0 disables. Time alone can
+      # change risk; this republishes a batch without bumping versions.
+      Eval__RefreshSeconds: ${EVAL_REFRESH_SECONDS:-60}
+    volumes:
+      - dpkeys:/app/keys          # Data Protection keys persist across restarts
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  dpkeys:

@@ -1,0 +1,39 @@
+# Environment and secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Local exports and dumps — never commit
+*.har
+exports/
+dumps/
+*.dump
+
+# Logs
+*.log
+logs/
+
+# Local user state
+user-state*.json
+state*.local.json
+
+# Build artifacts
+bin/
+obj/
+node_modules/
+
+# Design reference prototype — not needed at runtime, excluded from the public repo
+design-reference/
+
+# Agent / tool session state — never publish
+.agents/
+.claude/
+workflows/
+
+# Media recordings, archives, caches
+recordings/
+*.zip
+*.tar
+*.tar.gz
+*.cache/
+**/keys/
