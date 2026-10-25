@@ -901,8 +901,19 @@ app.MapPost("/api/v1/analytics/whatif", async (AppDb db,
 
 // --- /metrics: Prometheus exposition from the latest PUBLISHED batch --------
 // Values all come from ONE eval run — no recalculation on scrape.
-app.MapGet("/metrics", async (AppDb db) =>
+// Access: cookie session OR a dedicated scrape token (env Scraping__Token)
+// sent as `Authorization: Bearer <token>` — a narrow credential that reaches
+// only /metrics, never the customer APIs.
+var scrapeToken = builder.Configuration["Scraping:Token"]
+    ?? Environment.GetEnvironmentVariable("Scraping__Token");
+bool ScrapeAllowed(HttpContext ctx) =>
+    ctx.User.Identity?.IsAuthenticated == true
+    || (!string.IsNullOrEmpty(scrapeToken)
+        && string.Equals(ctx.Request.Headers.Authorization.ToString(),
+            $"Bearer {scrapeToken}", StringComparison.Ordinal));
+app.MapGet("/metrics", async (HttpContext http, AppDb db) =>
 {
+    if (!ScrapeAllowed(http)) return Results.Unauthorized();
     var run = await db.EvalRuns.OrderByDescending(r => r.CreatedAt).FirstOrDefaultAsync();
     var sb = new System.Text.StringBuilder();
     sb.AppendLine("# HELP churn_eval_data_present Whether an evaluation batch exists (1=yes,0=no).");
@@ -938,7 +949,7 @@ app.MapGet("/metrics", async (AppDb db) =>
         sb.AppendLine($"churn_money_totals_eur_cents{{part=\"uncovered\"}} {m.UncoveredTotal}");
     }
     return Results.Text(sb.ToString(), "text/plain; version=0.0.4");
-}).RequireAuthorization();
+});
 
 // --- Swagger: OpenAPI spec + Swagger UI, both behind the same auth ----------
 // Guard the whole docs surface (UI shell AND spec JSON) with cookie-auth —

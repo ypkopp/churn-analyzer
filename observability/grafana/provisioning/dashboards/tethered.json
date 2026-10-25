@@ -1,0 +1,28 @@
+{
+  "annotations": { "list": [ { "builtIn": 1, "datasource": { "type": "grafana", "uid": "-- Grafana --" }, "enable": true, "hide": true, "iconColor": "rgba(0, 211, 255, 1)", "name": "Annotations & Alerts", "type": "dashboard" } ] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    { "datasource": { "type": "prometheus", "uid": "Prometheus" }, "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green" } ] }, "unit": "short" }, "overrides": [] }, "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 }, "id": 1, "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "percentChangeColorMode": "standard", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "showPercentChange": false, "textMode": "auto", "wideLayout": true }, "pluginVersion": "11.4.0", "targets": [ { "expr": "churn_eval_data_present", "legendFormat": "data present", "refId": "A" } ], "title": "Evaluation data present", "type": "stat" },
+    { "datasource": { "type": "prometheus", "uid": "Prometheus" }, "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green" } ] }, "unit": "s" }, "overrides": [] }, "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 }, "id": 2, "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "showPercentChange": false, "textMode": "auto", "wideLayout": true }, "pluginVersion": "11.4.0", "targets": [ { "expr": "time() - churn_eval_last_success_seconds", "legendFormat": "age", "refId": "A" } ], "title": "Age of last successful evaluation (s)", "type": "stat" },
+    { "datasource": { "type": "prometheus", "uid": "Prometheus" }, "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green" } ] }, "unit": "cents" }, "overrides": [] }, "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 }, "id": 3, "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "showPercentChange": false, "textMode": "auto", "wideLayout": true }, "pluginVersion": "11.4.0", "targets": [ { "expr": "churn_at_risk_amount_eur_cents", "legendFormat": "at-risk", "refId": "A" } ], "title": "At-risk amount (EUR cents)", "type": "stat" },
+    { "datasource": { "type": "prometheus", "uid": "Prometheus" }, "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisBorderShow": false, "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "barWidthFactor": 0.6, "drawStyle": "line", "fillOpacity": 20, "gradientMode": "none", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "insertNulls": false, "lineInterpolation": "linear", "lineWidth": 2, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "auto", "spanNulls": false, "stacking": { "group": "A", "mode": "normal" }, "thresholdsStyle": { "mode": "off" } }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green" } ] }, "unit": "short" }, "overrides": [] }, "gridPos": { "h": 9, "w": 24, "x": 0, "y": 8 }, "id": 4, "options": { "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "hideZeros": false, "mode": "multi", "sort": "none" } }, "pluginVersion": "11.4.0", "targets": [ { "expr": "churn_customers_by_risk_level", "legendFormat": "{{level}}", "refId": "A" } ], "title": "Customers by risk level", "type": "timeseries" },
+    { "datasource": { "type": "prometheus", "uid": "Prometheus" }, "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisBorderShow": false, "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "barWidthFactor": 0.6, "drawStyle": "line", "fillOpacity": 20, "gradientMode": "none", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "insertNulls": false, "lineInterpolation": "linear", "lineWidth": 2, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "auto", "spanNulls": false, "stacking": { "group": "A", "mode": "normal" }, "thresholdsStyle": { "mode": "off" } }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green" } ] }, "unit": "cents" }, "overrides": [] }, "gridPos": { "h": 9, "w": 24, "x": 0, "y": 17 }, "id": 5, "options": { "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "hideZeros": false, "mode": "multi", "sort": "none" } }, "pluginVersion": "11.4.0", "targets": [ { "expr": "churn_money_totals_eur_cents", "legendFormat": "{{part}}", "refId": "A" } ], "title": "Money breakdown (EUR cents)", "type": "timeseries" }
+  ],
+  "preload": false,
+  "refresh": "30s",
+  "schemaVersion": 40,
+  "tags": [ "tethered" ],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Tethered — Churn analytics",
+  "uid": "tethered-main",
+  "version": 1,
+  "weekStart": ""
+}

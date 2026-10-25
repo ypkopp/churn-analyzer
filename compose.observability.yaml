@@ -1,0 +1,58 @@
+# Optional observability profile — prometheus + grafana alongside the app.
+# Runs on the same compose network, loopback-only ports, fixed image versions.
+# Enable with: docker compose -f compose.yaml -f compose.observability.yaml --profile observability up -d
+name: churn-analyzer-observability
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    restart: unless-stopped
+    profiles: ["observability"]
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=15d'      # bounded retention on a small VPS
+      - '--storage.tsdb.retention.size=1GB'
+      - '--web.listen-address=127.0.0.1:9090'
+    volumes:
+      - prometheus_data:/prometheus
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    # no published ports — scrape happens over the internal network only.
+    depends_on:
+      - app
+    networks:
+      - default
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    restart: unless-stopped
+    profiles: ["observability"]
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_AUTH_DISABLE_LOGIN_FORM: "false"
+      GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s:%(http_port)s/"
+      GF_SERVER_HTTP_ADDR: 127.0.0.1
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "127.0.0.1:3000:3000"      # loopback only — reach via SSH tunnel or an explicit proxy
+    depends_on:
+      - prometheus
+    networks:
+      - default
+
+  # Re-declare the app so this file can reference it for the dependency edge.
+  # No ports/env changes — it stays loopback/internal via compose.override.
+  app:
+    profiles: ["observability"]
+
+volumes:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  default:
+    name: churn-analyzer_default
+    external: true

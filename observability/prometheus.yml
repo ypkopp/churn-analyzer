@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+# App metrics on the internal compose network. The scrape credential is a
+# dedicated bearer token (Scraping__Token) — a narrow secret that reaches only
+# /metrics, never the customer APIs, and lives only in server env / this file.
+scrape_configs:
+  - job_name: tethered-app
+    scheme: http
+    metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/scrape_token
+    static_configs:
+      - targets: ["app:8080"]
