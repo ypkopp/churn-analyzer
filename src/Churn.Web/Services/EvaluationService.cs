@@ -39,9 +39,9 @@ public sealed class EvaluationService(IServiceScopeFactory scopeFactory, TimePro
             var settingsRow = await db.ModelSettings.OrderByDescending(m => m.ModelVersion).FirstOrDefaultAsync(ct);
 
             var snap = JsonSerializer.Deserialize<SourceSnapshotDto>(snapRow.Payload, J)!;
-            var settings = ToCore(settingsRow) ?? ModelSettings.Baseline();
-            var accounts = snap.Accounts.Select(ToCore).ToList();
-            var services = snap.Services.Select(ToCore).ToList();
+            var settings = ToCoreSettings(settingsRow) ?? ModelSettings.Baseline();
+            var accounts = snap.Accounts.Select(ToCoreAccount).ToList();
+            var services = snap.Services.Select(ToCoreService).ToList();
             var asOf = clock.GetUtcNow();
             var ctx = new EvaluationContext(asOf, settings.HorizonDays,
                 snapRow.SnapshotVersion, settings.ModelVersion);
@@ -97,8 +97,9 @@ public sealed class EvaluationService(IServiceScopeFactory scopeFactory, TimePro
         return await db.EvalRuns.OrderByDescending(r => r.CreatedAt).FirstOrDefaultAsync(ct);
     }
 
-    // --- mapping ------------------------------------------------------------
-    private static ModelSettings? ToCore(ModelSettingsRow? row)
+    // --- mapping (internal so the analytics endpoints can reuse the exact
+    //            same account/service conversion — no second formula) --------
+    internal static ModelSettings? ToCoreSettings(ModelSettingsRow? row)
     {
         if (row is null) return null;
         var d = JsonSerializer.Deserialize<ModelSettingsDto>(row.Payload,
@@ -111,12 +112,21 @@ public sealed class EvaluationService(IServiceScopeFactory scopeFactory, TimePro
             W("prolong_wait", 40), W("suspended", 10),
             T("high", 50), T("medium", 20));
     }
+    internal static ModelSettings ToCoreSettings(ModelSettingsDto d)
+    {
+        int W(string k, int def) => d.Weights.TryGetValue(k, out var v) ? v : def;
+        int T(string k, int def) => d.Thresholds.TryGetValue(k, out var v) ? v : def;
+        return new ModelSettings(d.ModelVersion, d.HorizonDays,
+            W("expiring_no_autoprolong", 30), W("insufficient_funds", 25),
+            W("prolong_wait", 40), W("suspended", 10),
+            T("high", 50), T("medium", 20));
+    }
 
-    private static Account ToCore(AccountDto a) => new(a.Id, a.Email, a.Balance,
+    internal static Account ToCoreAccount(AccountDto a) => new(a.Id, a.Email, a.Balance,
         a.WithdrawBalance, a.TotalReplenished, a.BonusBalance,
         a.BonusState == "unlocked" ? BonusState.Unlocked : BonusState.Locked);
 
-    private static Service ToCore(ServiceDto s) => new(s.Id, s.Name, s.OwnerId,
+    internal static Service ToCoreService(ServiceDto s) => new(s.Id, s.Name, s.OwnerId,
         ParseTerm(s.PaymentTerm), s.AutoProlong, s.CreatedAt, s.ExpiresAt,
         ParseStatus(s.Status), s.Price);
 

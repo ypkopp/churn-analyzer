@@ -761,6 +761,144 @@ app.MapDelete("/api/v1/segments/{id:long}", async (long id, AppDb db, ClaimsPrin
     return Results.NoContent();
 }).RequireAuthorization("AnalystOrAdmin");
 
+// --- analytics: compare two saved batches + what-if scenario ------------------
+// Lists stored evaluation runs so the UI can pick two real batches.
+app.MapGet("/api/v1/analytics/batches", async (AppDb db) =>
+{
+    var runs = await db.EvalRuns.OrderByDescending(r => r.CreatedAt)
+        .Take(50).ToListAsync();
+    return Results.Ok(runs.Select(r => new { r.EvaluationId, r.AsOf,
+        r.SnapshotVersion, r.ModelVersion }));
+}).RequireAuthorization("AnalystOrAdmin");
+
+// Compare two saved batches at accountId level — customers present on only
+// one side are kept, not dropped. No claim that a single factor caused a diff.
+app.MapGet("/api/v1/analytics/compare", async (AppDb db, Guid a, Guid b) =>
+{
+    var ra = await db.EvalRuns.FirstOrDefaultAsync(x => x.EvaluationId == a);
+    var rb = await db.EvalRuns.FirstOrDefaultAsync(x => x.EvaluationId == b);
+    if (ra is null || rb is null) return Results.NotFound(Err("not_found", "batch"));
+    var rowsA = await db.CustomerResults.Where(x => x.EvaluationId == a).ToListAsync();
+    var rowsB = await db.CustomerResults.Where(x => x.EvaluationId == b).ToListAsync();
+    var sa = await db.SummaryResults.FirstOrDefaultAsync(x => x.EvaluationId == a);
+    var sb = await db.SummaryResults.FirstOrDefaultAsync(x => x.EvaluationId == b);
+
+    var mapA = rowsA.ToDictionary(x => x.AccountId, x => JsonSerializer.Deserialize<CustomerResultDto>(x.Payload, Jopts)!);
+    var mapB = rowsB.ToDictionary(x => x.AccountId, x => JsonSerializer.Deserialize<CustomerResultDto>(x.Payload, Jopts)!);
+    var ids = mapA.Keys.Union(mapB.Keys).OrderBy(x => x).ToList();
+
+    var changes = ids.Select(id =>
+    {
+        var ca = mapA.GetValueOrDefault(id); var cb = mapB.GetValueOrDefault(id);
+        if (ca is null)
+            return new { accountId = id, state = "appeared", from = (object?)null, to = Rank(cb),
+                scoreDelta = 0, levelChanged = false, assessChanged = false, reasonChanged = false };
+        if (cb is null)
+            return new { accountId = id, state = "removed", from = Rank(ca), to = (object?)null,
+                scoreDelta = 0, levelChanged = false, assessChanged = false, reasonChanged = false };
+        var scoreDelta = (cb.Rank.RiskScore ?? -1) - (ca.Rank.RiskScore ?? -1);
+        var levelChanged = ca.Rank.RiskLevel != cb.Rank.RiskLevel;
+        var assessChanged = ca.Rank.NoAssessment != cb.Rank.NoAssessment;
+        var reasonChanged = !new HashSet<string>(ca.Rank.Reasons ?? new List<string>())
+            .SetEquals(cb.Rank.Reasons ?? new List<string>());
+        return new
+        {
+            accountId = id,
+            state = levelChanged || assessChanged || scoreDelta != 0 || reasonChanged ? "changed" : "same",
+            from = Rank(ca), to = Rank(cb), scoreDelta, levelChanged, assessChanged, reasonChanged
+        };
+    }).ToList();
+
+    return Results.Ok(new
+    {
+        a = new { ra.EvaluationId, ra.AsOf, ra.SnapshotVersion, ra.ModelVersion },
+        b = new { rb.EvaluationId, rb.AsOf, rb.SnapshotVersion, rb.ModelVersion },
+        sameBatch = a == b,
+        countsA = counts(mapA), countsB = counts(mapB),
+        moneyA = sa is null ? null : JsonSerializer.Deserialize<SummaryDto>(sa.Payload, Jopts)?.Money,
+        moneyB = sb is null ? null : JsonSerializer.Deserialize<SummaryDto>(sb.Payload, Jopts)?.Money,
+        changed = changes.Where(c => c.state == "changed").ToList(),
+        appeared = changes.Where(c => c.state == "appeared").ToList(),
+        removed = changes.Where(c => c.state == "removed").ToList(),
+        total = ids.Count
+    });
+    static object? Rank(CustomerResultDto? d) => d is null ? null : new
+    {
+        d.Rank.AccountId, d.Rank.Email, d.Rank.RiskScore, d.Rank.RiskLevel,
+        d.Rank.Reasons, d.Rank.NoAssessment
+    };
+    static object counts(Dictionary<long, CustomerResultDto> m) => new
+    {
+        high = m.Values.Count(v => v.Rank.RiskLevel == "high"),
+        medium = m.Values.Count(v => v.Rank.RiskLevel == "medium"),
+        low = m.Values.Count(v => v.Rank.RiskLevel == "low"),
+        no_assessment = m.Values.Count(v => v.Rank.NoAssessment)
+    };
+}).RequireAuthorization("AnalystOrAdmin");
+
+// What-if: recompute risk+money on the CURRENT snapshot with proposed settings
+// and the SAME asOf — without writing a batch or touching live settings.
+// Marked "scenario, not applied" — never publishable.
+app.MapPost("/api/v1/analytics/whatif", async (AppDb db,
+    TimeProvider clock, WhatIfRequest req) =>
+{
+    var snapRow = await db.Snapshots.OrderByDescending(s => s.SnapshotVersion).FirstOrDefaultAsync();
+    if (snapRow is null) return Results.Ok(new { state = "no_data" });
+    var settingsRow = await db.ModelSettings.OrderByDescending(m => m.ModelVersion).FirstOrDefaultAsync();
+    var baseSettings = Churn.Web.Services.EvaluationService.ToCoreSettings(settingsRow) ?? Churn.Core.ModelSettings.Baseline();
+    var scenario = req?.Settings is not null ? Churn.Web.Services.EvaluationService.ToCoreSettings(req.Settings) : baseSettings;
+    var snap = JsonSerializer.Deserialize<SourceSnapshotDto>(snapRow.Payload, Jopts)!;
+    var asOf = clock.GetUtcNow();   // shared by baseline AND scenario — no time skew
+    var ctxB = new Churn.Core.EvaluationContext(asOf, baseSettings.HorizonDays,
+        snapRow.SnapshotVersion, baseSettings.ModelVersion);
+    var ctxS = new Churn.Core.EvaluationContext(asOf, scenario.HorizonDays,
+        snapRow.SnapshotVersion, scenario.ModelVersion);
+    var accounts = snap.Accounts.Select(Churn.Web.Services.EvaluationService.ToCoreAccount).ToList();
+    var services = snap.Services.Select(Churn.Web.Services.EvaluationService.ToCoreService).ToList();
+
+    var diffs = accounts.Select(a =>
+    {
+        var rb = Churn.Core.RiskEngine.Evaluate(a, services, ctxB, baseSettings);
+        var mb = Churn.Core.MoneyEngine.Evaluate(a, services, rb, ctxB);
+        var rs = Churn.Core.RiskEngine.Evaluate(a, services, ctxS, scenario);
+        var ms = Churn.Core.MoneyEngine.Evaluate(a, services, rs, ctxS);
+        return new
+        {
+            a.Id, a.Email,
+            baseScore = rb.NoAssessment ? (int?)null : rb.Score, baseLevel = Lvl(rb),
+            scenScore = rs.NoAssessment ? (int?)null : rs.Score, scenLevel = Lvl(rs),
+            scoreDelta = (rs.NoAssessment ? 0 : rs.Score) - (rb.NoAssessment ? 0 : rb.Score),
+            levelChanged = Lvl(rb) != Lvl(rs), assessChanged = rb.NoAssessment != rs.NoAssessment,
+            moneyDelta = (ms.AtRiskAmount ?? 0) - (mb.AtRiskAmount ?? 0),
+            reasonsChanged = !new HashSet<string>(rb.ReasonCodes).SetEquals(rs.ReasonCodes)
+        };
+    }).ToList();
+    static string Lvl(Churn.Core.CustomerAssessment r) =>
+        r.NoAssessment ? "no_assessment" : r.Level.ToString().ToLowerInvariant();
+
+    var changed = diffs.Where(d => d.levelChanged || d.assessChanged || d.scoreDelta != 0 || d.reasonsChanged || d.moneyDelta != 0)
+        .OrderByDescending(d => Math.Abs(d.scoreDelta)).ThenByDescending(d => Math.Abs(d.moneyDelta)).Take(20).ToList();
+    long rbR = 0, rbU = 0, rbA = 0, rsA = 0;
+    foreach (var a in accounts)
+    {
+        var rb = Churn.Core.RiskEngine.Evaluate(a, services, ctxB, baseSettings);
+        var mb = Churn.Core.MoneyEngine.Evaluate(a, services, rb, ctxB);
+        var rs = Churn.Core.RiskEngine.Evaluate(a, services, ctxS, scenario);
+        var ms = Churn.Core.MoneyEngine.Evaluate(a, services, rs, ctxS);
+        rbR += mb.RenewalCostInHorizon; rbU += mb.UncoveredAmount; rbA += mb.AtRiskAmount ?? 0; rsA += ms.AtRiskAmount ?? 0;
+    }
+    return Results.Ok(new
+    {
+        state = "ok", note = "scenario_not_applied", asOf,
+        baseCounts = new { high = diffs.Count(d => d.baseLevel == "high"), medium = diffs.Count(d => d.baseLevel == "medium"), low = diffs.Count(d => d.baseLevel == "low"), no_assessment = diffs.Count(d => d.baseLevel == "no_assessment") },
+        scenCounts = new { high = diffs.Count(d => d.scenLevel == "high"), medium = diffs.Count(d => d.scenLevel == "medium"), low = diffs.Count(d => d.scenLevel == "low"), no_assessment = diffs.Count(d => d.scenLevel == "no_assessment") },
+        moneyBase = new { at_risk_total = rbA, renewal_cost = rbR, uncovered = rbU },
+        moneyScen = new { at_risk_total = rsA },
+        changed, baseModelVersion = baseSettings.ModelVersion,
+        snapshotVersion = snapRow.SnapshotVersion,
+    });
+}).RequireAuthorization("AnalystOrAdmin").RequireRateLimiting("login");
+
 // --- /metrics: Prometheus exposition from the latest PUBLISHED batch --------
 // Values all come from ONE eval run — no recalculation on scrape.
 app.MapGet("/metrics", async (AppDb db) =>

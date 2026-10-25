@@ -69,6 +69,44 @@
           </div>
         </div>
       </section>
+      <section class="panel analytics" id="cmp" aria-label="Сравнение пересчётов и what-if">
+        <div class="analytics__head">
+          <h2 class="analytics__title">Сравнение пересчётов и what-if</h2>
+          <p class="analytics__note">Два сохранённых батча — наблюдаемая разница, не причинно-следственный вывод. What-if считает сценарий, не применён.</p>
+        </div>
+        <div class="analytics__grid">
+          <div class="analytics__col">
+            <h3 class="analytics__sub">Сравнение двух батчей</h3>
+            <div class="cmp__row">
+              <select id="cmp-a" class="c-select" aria-label="Батч A"></select>
+              <select id="cmp-b" class="c-select" aria-label="Батч B"></select>
+              <button class="c-btn c-btn--sm" data-action="cmp-run">Сравнить</button>
+            </div>
+            <div id="cmp-out" class="cmp__out"></div>
+          </div>
+          <div class="analytics__col">
+            <h3 class="analytics__sub">What-if: коэффициенты и пороги</h3>
+            <div class="cmp__form" id="whatif-form">
+              <div class="form-row">
+                <label>Горизонт, дней<input id="w-horizon" type="number" min="1" max="90" value="14" class="c-input"></label>
+                <label>expiring_no_autoprolong<input id="w-exp" type="number" min="0" value="30" class="c-input"></label>
+                <label>insufficient_funds<input id="w-ins" type="number" min="0" value="25" class="c-input"></label>
+              </div>
+              <div class="form-row">
+                <label>prolong_wait<input id="w-pw" type="number" min="0" value="40" class="c-input"></label>
+                <label>suspended<input id="w-susp" type="number" min="0" value="10" class="c-input"></label>
+              </div>
+              <div class="form-row">
+                <label>Порог high<input id="w-th" type="number" min="0" max="100" value="50" class="c-input"></label>
+                <label>Порог medium<input id="w-tm" type="number" min="0" max="100" value="20" class="c-input"></label>
+              </div>
+              <button class="c-btn c-btn--sm" data-action="whatif-run">Посчитать сценарий</button>
+              <span class="cmp__tag">Сценарий, не применён</span>
+            </div>
+            <div id="whatif-out" class="cmp__out"></div>
+          </div>
+        </div>
+      </section>
       <section class="panel" aria-label="Таблица клиентов">
         <div class="toolbar" id="toolbar"></div>
         <div class="toolbar" id="toolbar-extra"></div>

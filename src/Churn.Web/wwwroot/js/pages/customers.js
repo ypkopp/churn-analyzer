@@ -458,6 +458,8 @@
       else if(a==="ai-brief"){ runAiBrief(); }
       else if(a==="seg-save"){ saveSegment(); }
       else if(a==="csv-export"){ exportCsv(); }
+      else if(a==="cmp-run"){ runCompare(); }
+      else if(a==="whatif-run"){ runWhatIf(); }
     });
     $("#table-region").addEventListener("keydown",(e)=>{
       const tr=e.target.closest("tr[data-id]"); if(!tr)return;
@@ -561,7 +563,7 @@
   }
 
   async function init() {
-    buildToolbar(); renderFilter(); bind(); bindNav();
+    buildToolbar(); renderFilter(); bind(); bindNav(); fillBatches();
     try {
       const cfg = await (await fetch("/api/v1/ui-config", { credentials: "same-origin" })).json();
       if (cfg && Number.isFinite(cfg.pollSeconds)) POLL_SECONDS = Math.max(0, cfg.pollSeconds);
@@ -695,6 +697,49 @@
     }
   }
   window.runAiBrief=runAiBrief;
+
+  /* -------- compare batches + what-if -------- */
+  async function fillBatches(){
+    const selA=$("#cmp-a"),selB=$("#cmp-b");if(!selA)return;
+    const r=await api.listBatches();
+    const runs=r.ok?(r.data||[]):[];
+    const o=runs.map(x=>`<option value="${x.evaluationId}">${String(x.evaluationId).slice(0,8)} · ${Fmt.dateTime(x.asOf)} · snap${x.snapshotVersion} · m${x.modelVersion}</option>`).join("");
+    selA.innerHTML=o;selB.innerHTML=o;if(runs[1])selB.value=runs[1].evaluationId;
+  }
+  async function runCompare(){
+    const a=$("#cmp-a")?.value,b=$("#cmp-b")?.value,out=$("#cmp-out");
+    if(!a||!b){out.innerHTML=`<div class="analytics__empty">Выберите два батча.</div>`;return;}
+    out.innerHTML=UI.Spinner("Сравнение…");
+    const r=await api.compare(a,b);
+    if(!r.ok){out.innerHTML=`<div class="analytics__empty">${esc(r.error?.message||r.error?.code||"")}</div>`;return;}
+    const d=r.data;
+    const lv=(k)=>`<span class="cmp__lv">${k}: ${d.countsA[k]||0} → ${d.countsB[k]||0}</span>`;
+    const rows=(d.changed||[]).slice(0,12).map(c=>`<div class="taskrow"><span class="taskrow__title">ID ${c.accountId}</span>
+      <span class="taskrow__meta">${c.from?.riskLevel??"—"} ${c.from?.riskScore??"—"} → ${c.to?.riskLevel??"—"} ${c.to?.riskScore??"—"}${c.assessChanged?" · оценка изменилась":""}${c.reasonChanged?" · причины":""}</span></div>`).join("");
+    out.innerHTML=`<div class="cmp__meta">A ${String(d.a.evaluationId).slice(0,8)} vs B ${String(d.b.evaluationId).slice(0,8)}${d.sameBatch?" · один батч":""}</div>
+      <div class="cmp__levels">${lv("high")}${lv("medium")}${lv("low")}${lv("no_assessment")}</div>
+      ${d.moneyA||d.moneyB?`<div class="cmp__meta">at-risk: ${d.moneyA?.atRiskTotal??"—"} → ${d.moneyB?.atRiskTotal??"—"} (EUR cents)</div>`:""}
+      ${(d.appeared||[]).length?`<div class="cmp__meta">появилось: ${d.appeared.length}</div>`:""}
+      ${(d.removed||[]).length?`<div class="cmp__meta">исчезло: ${d.removed.length}</div>`:""}
+      ${rows||`<div class="analytics__empty">Различий нет.</div>`}`;
+  }
+  async function runWhatIf(){
+    const out=$("#whatif-out");
+    out.innerHTML=UI.Spinner("Считаю сценарий…");
+    const settings={modelVersion:0,horizonDays:+$("#w-horizon").value,
+      weights:{expiring_no_autoprolong:+$("#w-exp").value,insufficient_funds:+$("#w-ins").value,prolong_wait:+$("#w-pw").value,suspended:+$("#w-susp").value},
+      thresholds:{high:+$("#w-th").value,medium:+$("#w-tm").value}};
+    const r=await api.whatif(settings);
+    if(!r.ok){out.innerHTML=`<div class="analytics__empty">${esc(r.error?.message||r.error?.code||"")}</div>`;return;}
+    const d=r.data;
+    const rows=(d.changed||[]).map(c=>`<div class="taskrow"><span class="taskrow__title">${esc(c.email)}</span>
+      <span class="taskrow__meta">${c.baseLevel} ${c.baseScore??"—"} → ${c.scenLevel} ${c.scenScore??"—"}${c.assessChanged?" · оценка изменилась":""}${c.reasonsChanged?" · причины":""}</span></div>`).join("");
+    out.innerHTML=`<div class="cmp__meta">asOf ${esc(Fmt.dateTime(d.asOf))} · baseline v${d.baseModelVersion} · snapshot v${d.snapshotVersion}</div>
+      <div class="cmp__levels"><span class="cmp__lv">high ${d.baseCounts.high} → ${d.scenCounts.high}</span><span class="cmp__lv">medium ${d.baseCounts.medium} → ${d.scenCounts.medium}</span><span class="cmp__lv">low ${d.baseCounts.low} → ${d.scenCounts.low}</span><span class="cmp__lv">no_assess ${d.baseCounts.no_assessment} → ${d.scenCounts.no_assessment}</span></div>
+      <div class="cmp__meta">at-risk: ${d.moneyBase.at_risk_total} → ${d.moneyScen.at_risk_total} (EUR cents)</div>
+      <div class="cmp__tag">Сценарий, не применён — рабочая модель не изменилась.</div>
+      ${rows||`<div class="analytics__empty">Изменений нет при этих коэффициентах.</div>`}`;
+  }
 
   /* -------- tasks view (full section) -------- */
   function openTasksView(){

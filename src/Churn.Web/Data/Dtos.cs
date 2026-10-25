@@ -50,3 +50,4 @@ public sealed record MessageDto(long Id, long AccountId, string Recipient,
     Guid EvaluationId, DateTimeOffset AsOf, DateTimeOffset CreatedAt, DateTimeOffset? SentAt);
 public sealed record CreateSegmentRequest(string Name, string Query);
 public sealed record SegmentDto(long Id, string Name, string Query, DateTimeOffset CreatedAt);
+public sealed record WhatIfRequest(ModelSettingsDto? Settings);

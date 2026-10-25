@@ -170,6 +170,10 @@
     async sendMessage(id){ const r=await req("POST",`/api/v1/messages/${id}/send`,{});return r; },
     /* ai */
     async aiBrief(){ const r=await req("POST","/api/v1/ai/brief",{});return r; },
+    /* compare + whatif */
+    async listBatches(){ const r=await req("GET","/api/v1/analytics/batches");return r.ok?ok(r.data):r; },
+    async compare(a,b){ const r=await req("GET",`/api/v1/analytics/compare?a=${a}&b=${b}`);return r.ok?ok(r.data):r; },
+    async whatif(settings){ const r=await req("POST","/api/v1/analytics/whatif",{settings});return r.ok?ok(r.data):r; },
     /* segments */
     async listSegments(){ const r=await req("GET","/api/v1/segments");return r.ok?ok(r.data):r; },
     async createSegment(b){ const r=await req("POST","/api/v1/segments",b);return r.ok?ok(r.data):r; },
