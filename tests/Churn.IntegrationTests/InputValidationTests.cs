@@ -55,15 +55,20 @@ public class InputValidationTests : IClassFixture<PgAppFactory>
         var r = await c.GetFromJsonAsync<List<Dictionary<string, object>>>("/api/v1/analytics/batches");
         return r!.Count;
     }
+    // Deserialize into JsonElement-safe values: GetFromJsonAsync<Dictionary<string,object>>
+    // yields JsonElement, and Convert.ToInt*(element) throws InvalidCastException.
+    private static long? ToInt64(object? v) =>
+        v is System.Text.Json.JsonElement e && e.ValueKind == System.Text.Json.JsonValueKind.Number
+            ? e.GetInt64() : null;
     private async Task<int?> ModelVersion(HttpClient c)
     {
         var r = await c.GetFromJsonAsync<Dictionary<string, object>>("/api/v1/model/settings");
-        return r!.TryGetValue("modelVersion", out var v) ? Convert.ToInt32(v) : null;
+        return r!.TryGetValue("modelVersion", out var v) ? (int?)ToInt64(v) : null;
     }
     private async Task<long?> SnapshotVersion(HttpClient c)
     {
         var r = await c.GetFromJsonAsync<Dictionary<string, object>>("/api/v1/status");
-        return r!.TryGetValue("snapshotVersion", out var v) && v is not null ? Convert.ToInt64(v) : null;
+        return r!.TryGetValue("snapshotVersion", out var v) ? ToInt64(v) : null;
     }
 
     // ---------- model settings: every invalid case must not write ----------
