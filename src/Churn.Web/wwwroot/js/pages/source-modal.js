@@ -41,6 +41,11 @@
           <span class="c-field__label">JSON-снимок (accounts, services, transactions)</span>
           <input class="c-input" type="file" id="src-file" accept="application/json,.json" ${pending ? "disabled" : ""}>
         </label>
+        <div style="margin-top:10px">
+          ${UI.Button({ label: "Сгенерировать демо-снимок", variant: "ghost", size: "sm",
+            disabled: pending, attrs: { "data-src": "gen" } })}
+          <div class="sec__note" style="margin-top:6px">Детерминированный снимок (seed 42) — та же фикстура что и у стенда; замена идёт через тот же PUT /source/snapshot.</div>
+        </div>
         ${parseInfo ? (parseInfo.ok
           ? `<div style="margin-top:12px">${UI.Banner({ tone: "info", mark: "i", title: "Файл распознан", text: `Аккаунтов: ${parseInfo.accounts} · услуг: ${parseInfo.services} · транзакций: ${parseInfo.transactions}. Подтвердите замену.` })}</div>`
           : `<div style="margin-top:12px">${UI.Banner({ tone: "danger", title: "Файл не читается", text: esc(parseInfo.error) })}</div>`) : ""}
@@ -71,7 +76,20 @@
     if (b.getAttribute("aria-disabled") === "true") { e.preventDefault(); return; }
     if (b.dataset.src === "close") modal.close();
     if (b.dataset.src === "apply") await apply();
+    if (b.dataset.src === "gen") await generate();
   });
+
+  async function generate() {
+    if (status === "pending") return;
+    status = "pending"; serverError = null; render();
+    const r = await api.genSnapshot();
+    if (!r.ok) {
+      status = "idle"; serverError = r.error?.message || "Не удалось сгенерировать.";
+      render(); return;
+    }
+    fileText = JSON.stringify(r.data); fileName = "demo-snapshot.json";
+    parseInfo = analyze(fileText); status = "idle"; render();
+  }
 
   async function apply() {
     if (status === "pending" || !fileText) return;
