@@ -1,5 +1,7 @@
 namespace Churn.Web.Services;
 
+using Churn.Web.Data;
+
 /// <summary>
 /// Deterministic synthetic snapshot generator — the same contract as
 /// data/raw/generate.py (seeded RNG, calendar paymentTerm arithmetic via
