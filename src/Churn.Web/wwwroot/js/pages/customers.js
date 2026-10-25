@@ -398,7 +398,10 @@
       const overdue = d !== null && d < 0;
       let due = s.expiresAt ? `${Fmt.date(s.expiresAt)} · ${Fmt.relDays(d)}` : "дата окончания не указана";
       let alert = false;
-      if (s.status === "prolong_wait" && d !== null) { const left = 5 + d; due = `по правилу источника удаление через ${Math.max(left,0)} ${Fmt.plural(Math.max(left,0),"день","дня","дней")}`; alert = true; }
+      // prolong_wait: source rule keeps the service ~5 days past expiry.
+      // left<=0 means the rule window already ended — say so, not "0 days".
+      if (s.status === "prolong_wait" && d !== null) { const left = 5 + d;
+        due = left > 0 ? `правило источника: удаление через ${left} ${Fmt.plural(left,"день","дня","дней")}` : `правило источника: удалено`; alert = true; }
       else if (!muted && d !== null && d >= 0 && d <= 7 && !s.autoprolong) alert = true;
       return `<div class="svc__row${muted?" svc__row--muted":""}" id="svc-${a.id}-${s.id}" tabindex="-1">
         <div class="svc__name">${esc(s.name)} ${UI.Badge({ label: st.label, tone: st.tone, dot: true })}</div>
@@ -498,6 +501,7 @@
       else if(a==="msg-mailto"){ openMailto(t); }
       else if(a==="msg-send"){ sendDraft(t); }
       else if(a==="tasks-open"){ openTasksView(); }
+      else if(a==="tasks-close"){ closeTasksView(); }
       else if(a==="ai-brief"){ runAiBrief(); }
       else if(a==="seg-save"){ saveSegment(); }
       else if(a==="csv-export"){ exportCsv(); }
@@ -791,28 +795,41 @@
   }
 
   /* -------- tasks view (full section) -------- */
+  let _savedTable = null;   // stash the customer table so Задачи can restore it
   function openTasksView(){
-    // swap the table region for the tasks list (keeps nav + polling untouched)
     const main = $("#table-region");
     if (!main) return;
+    if (!_savedTable) _savedTable = main.innerHTML;   // keep the list — restore on back
     main.innerHTML = `<div id="tasks-view"><div class="toolbar">${UI.Skeleton("40%")}</div></div>`;
     loadTasksInto(main);
+  }
+  function closeTasksView(){
+    const main = $("#table-region");
+    if (main && _savedTable !== null) { main.innerHTML = _savedTable; _savedTable = null; }
   }
   async function loadTasksInto(main){
     const r = await api.listTasks({});
     const tasks = r.ok ? (r.data||[]) : [];
     main.innerHTML = `
       <div class="tasks-head"><h2>Задачи на удержание</h2>
-        <input id="task-search" class="c-input" placeholder="Поиск по заголовку" style="max-width:240px"></div>
+        <div class="tasks-head__ctl">
+          <input id="task-search" class="c-input" placeholder="Поиск по заголовку" style="max-width:240px">
+          ${UI.Button({label:"← Клиенты",variant:"ghost",size:"sm",attrs:{"data-action":"tasks-close"}})}
+        </div></div>
       <div id="tasks-list"></div>`;
     const list = main.querySelector("#tasks-list");
     const rows = tasks.map(t=>`
       <div class="taskrow" data-id="${t.id}">
         <div class="taskrow__main"><div class="taskrow__title">${esc(t.title)}</div>
-          <div class="taskrow__meta">клиент ID ${t.accountId} · ${esc(t.assigneeLogin)} · ${esc(t.status)}${t.dueAt?` · ${Fmt.date(t.dueAt)}`:""}${!t.customerAvailable?` · <em title="клиент не в текущем батче">данные недоступны</em>`:""}</div></div>
-        <select class="c-select taskrow__st" data-id="${t.id}">
-          ${["new","in_progress","done","cancelled"].map(s=>`<option value="${s}"${s===t.status?" selected":""}>${s}</option>`).join("")}
-        </select>
+          <div class="taskrow__meta">клиент ID ${t.accountId} · ${esc(t.assigneeLogin)} · ${esc(t.status)}${t.dueAt?` · ${Fmt.date(t.dueAt)}`:""}${!t.customerAvailable?` · <em title="клиент не в текущем батче">данные недоступны</em>`:""}</div>
+          ${t.description?`<div class="taskrow__desc" hidden>${esc(t.description)}</div>`:""}
+        </div>
+        <div class="taskrow__ctl">
+          ${t.description?`<button type="button" class="linkbtn taskrow__more" data-id="${t.id}" aria-expanded="false">Подробнее</button>`:""}
+          <select class="c-select taskrow__st" data-id="${t.id}">
+            ${["new","in_progress","done","cancelled"].map(s=>`<option value="${s}"${s===t.status?" selected":""}>${s}</option>`).join("")}
+          </select>
+        </div>
       </div>`).join("");
     list.innerHTML = tasks.length ? rows : `<p class="sec__note">Задач пока нет.</p>`;
     list.addEventListener("change", async (e)=>{
@@ -820,10 +837,16 @@
       const r2=await api.setTaskStatus(+sel.dataset.id,sel.value);
       if(r2.ok)loadTasksInto(main);
     });
+    list.addEventListener("click",(e)=>{
+      const b=e.target.closest(".taskrow__more"); if(!b)return;
+      const d=b.closest(".taskrow").querySelector(".taskrow__desc");
+      const open=d.hasAttribute("hidden"); d.toggleAttribute("hidden");
+      b.setAttribute("aria-expanded",String(open)); b.textContent=open?"Скрыть":"Подробнее";
+    });
     main.querySelector("#task-search").addEventListener("input",async(e)=>{
       const rr=await api.listTasks({q:e.target.value});
       const tt=rr.ok?(rr.data||[]):[];
-      list.innerHTML=tt.map(t=>`<div class="taskrow"><div class="taskrow__main"><div class="taskrow__title">${esc(t.title)}</div><div class="taskrow__meta">ID ${t.accountId} · ${esc(t.status)}</div></div></div>`).join("")||`<p class="sec__note">Ничего не найдено.</p>`;
+      list.innerHTML=tt.map(t=>`<div class="taskrow"><div class="taskrow__main"><div class="taskrow__title">${esc(t.title)}</div><div class="taskrow__meta">ID ${t.accountId} · ${esc(t.status)}${t.description?` · ${esc(t.description)}`:""}</div></div></div>`).join("")||`<p class="sec__note">Ничего не найдено.</p>`;
     });
   }
 

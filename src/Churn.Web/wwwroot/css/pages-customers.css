@@ -210,9 +210,9 @@
 .svc__row--muted { background: var(--color-bg-sunken); }
 .svc__name { font-weight: var(--weight-medium); display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; min-width: 0; }
 .svc__price { text-align: right; font-variant-numeric: var(--numeric); font-weight: var(--weight-medium); white-space: nowrap; }
-.svc__meta { font-size: var(--text-xs); color: var(--color-text-tertiary); display: flex; gap: var(--space-3); flex-wrap: wrap; font-variant-numeric: var(--numeric); }
+.svc__meta { font-size: var(--text-xs); color: var(--color-text-tertiary); display: flex; gap: var(--space-3); flex-wrap: wrap; font-variant-numeric: var(--numeric); min-width: 0; }
 .svc__meta .is-alert { color: var(--color-danger-fg); font-weight: var(--weight-medium); }
-.svc__due { text-align: right; font-size: var(--text-xs); color: var(--color-text-secondary); font-variant-numeric: var(--numeric); white-space: nowrap; }
+.svc__due { text-align: right; font-size: var(--text-xs); color: var(--color-text-secondary); font-variant-numeric: var(--numeric); min-width: 0; white-space: normal; }
 .svc__due.is-alert { color: var(--color-danger-fg); font-weight: var(--weight-medium); }
 
 .money { border: var(--border-default); border-radius: var(--radius-md); }
@@ -377,7 +377,7 @@
 
 /* modal footer lives inside .modal-form (setContent takes one root) — give it
    the same right-aligned look as .c-modal__foot without a second root node. */
-.modal-foot { display:flex; justify-content:flex-end; gap:var(--space-3); padding-top:var(--space-4); margin-top:var(--space-2); border-top:var(--border-subtle); }
+.modal-foot { display:flex; justify-content:flex-end; gap:var(--space-3); padding:var(--space-4) 0 0; margin-top:var(--space-2); border-top:var(--border-subtle); }
 
 /* Кнопка сохранения: фиксированная ширина — смена текста pending/success/error не сдвигает футер */
 .set__save { min-width: calc(var(--space-12) * 3 + var(--space-3)); }
@@ -419,10 +419,16 @@
 .modal-form input:focus-visible,.modal-form select:focus-visible,.modal-form textarea:focus-visible { outline:none; border-color:var(--color-accent); box-shadow:var(--focus-ring); }
 .modal-form .form-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 .modal-err { min-height:1.2em; font-size:var(--text-sm); color:var(--color-danger-fg); }
-.taskrow { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 12px; border:var(--border-width) solid var(--color-border-default); border-radius:var(--radius-md); background:var(--color-bg-surface); margin-bottom:8px; }
+.taskrow { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:10px 12px; border:var(--border-width) solid var(--color-border-default); border-radius:var(--radius-md); background:var(--color-bg-surface); margin-bottom:8px; }
 .taskrow__title { font:var(--weight-semibold) var(--text-md)/var(--lh-md) var(--font-sans); color:var(--color-text-primary); }
 .taskrow__meta { font-size:var(--text-xs); color:var(--color-text-secondary); }
+.taskrow__main { min-width:0; }
+.taskrow__desc { margin-top:6px; font-size:var(--text-sm); color:var(--color-text-secondary); line-height:var(--lh-md); white-space:pre-wrap; }
+.taskrow__ctl { display:flex; align-items:center; gap:var(--space-3); flex:none; }
 .taskrow__st { width:auto; }
+.tasks-head { display:flex; align-items:center; justify-content:space-between; gap:var(--space-3); flex-wrap:wrap; margin-bottom:12px; }
+.tasks-head h2 { margin:0; }
+.tasks-head__ctl { display:flex; align-items:center; gap:var(--space-3); }
 .ai-brief-slot { grid-column:1/-1; }
 .ai-brief { background:var(--color-accent-subtle); border:1px solid var(--color-border-default); border-radius:var(--radius-md); padding:12px 14px; font-size:var(--text-sm); color:var(--color-text-primary); }
 .ai-brief__meta { font-size:var(--text-2xs); color:var(--color-text-tertiary); margin-bottom:6px; font-family:var(--font-mono); }
