@@ -343,7 +343,7 @@
       return;
     }
     customerDrawer.setContent(customerHtml(res.data, res.meta.snapshot));
-    renderNextActions(res.data);
+    renderNextActions(res.data, res.meta.snapshot);
     loadCustomerTasks(id);
     const fb = customerDrawer.el.querySelector("[data-autofocus]"); fb && fb.focus({ preventScroll: true });
   }
@@ -351,18 +351,38 @@
   /* «Что проверить дальше» — deterministic suggestions from the CURRENT batch
      only (reasons/services/money of one evaluationId). Never a probability or
      auto-action; a task is still created by a human via the existing form. */
-  function renderNextActions(data){
+  function renderNextActions(data, snap){
     const el = document.querySelector(`#next-actions-${data.account.id} .next-actions`);
     if(!el) return;
-    const list = (window.NextActions?.build(data)) || [];
+    const card = data;
+    // takenAt comes from meta.snapshot, not the card — the adapter puts it there.
+    const snapTaken = snap?.takenAt || null;
+    const horizon = card.assessment?.horizonDays ?? null;
+    const ctx = { asOf: snapTaken,
+      horizonEnd: snapTaken && horizon !== null
+        ? new Date(new Date(snapTaken).getTime() + horizon * 86400000).toISOString() : null };
+    const list = (window.NextActions?.build(card, ctx)) || [];
+    // cap at 3 visible items; the rest stay reachable under <details> — no fact
+    // is dropped, only collapsed. Each item keeps its own service link.
+    const VISIBLE = 3;
+    const itemHtml = (n)=>`
+      <li class="na-item" ${n.serviceId?`data-service="${n.serviceId}" role="button" tabindex="0"`:""}>
+        <div class="na-item__title">${esc(n.title)}</div>
+        <div class="na-item__evidence"><code>${esc(n.code)}</code>${n.serviceId?` · услуга ${n.serviceId}`:""} · ${esc(n.evidence)}</div>
+      </li>`;
+    const shown = list.slice(0, VISIBLE), rest = list.slice(VISIBLE);
     el.innerHTML = list.length
-      ? `<ul class="na-list" role="list">${list.map(n=>`
-          <li class="na-item" data-service="${n.serviceId ?? ""}">
-            <div class="na-item__title">${esc(n.title)}</div>
-            <div class="na-item__evidence"><code>${esc(n.code)}</code>${n.serviceId?` · услуга ${n.serviceId}`:""} · ${esc(n.evidence)}</div>
-          </li>`).join("")}</ul>
+      ? `<ul class="na-list" role="list">${shown.map(itemHtml).join("")}</ul>
+        ${rest.length?`<details class="na-more"><summary>Ещё ${rest.length} ${Fmt.plural(rest.length,"рекомендация","рекомендации","рекомендаций")}</summary><ul class="na-list" role="list">${rest.map(itemHtml).join("")}</ul></details>`:""}
         <p class="sec__note">Рекомендации детерминированы по текущему батчу и не гарантируют результат.</p>`
       : `<p class="sec__note" style="margin:0">Автоматической рекомендации нет.</p>`;
+    // service link is real: scrolls + focuses the service row in this card.
+    el.querySelectorAll(".na-item[data-service]").forEach(li => {
+      const go = () => { const row = document.getElementById(`svc-${data.account.id}-${li.dataset.service}`);
+        if(row){ row.scrollIntoView({behavior:"smooth",block:"center"}); row.focus({preventScroll:true}); } };
+      li.addEventListener("click", go);
+      li.addEventListener("keydown", e => { if(e.key==="Enter"||e.key===" "){e.preventDefault();go();} });
+    });
   }
 
   function customerHtml({ account: a, assessment: as, services }, snap) {
@@ -378,9 +398,9 @@
       const overdue = d !== null && d < 0;
       let due = s.expiresAt ? `${Fmt.date(s.expiresAt)} · ${Fmt.relDays(d)}` : "дата окончания не указана";
       let alert = false;
-      if (s.status === "prolong_wait" && d !== null) { const left = 5 + d; due = `удаление через ${Math.max(left,0)} ${Fmt.plural(Math.max(left,0),"день","дня","дней")}`; alert = true; }
+      if (s.status === "prolong_wait" && d !== null) { const left = 5 + d; due = `по правилу источника удаление через ${Math.max(left,0)} ${Fmt.plural(Math.max(left,0),"день","дня","дней")}`; alert = true; }
       else if (!muted && d !== null && d >= 0 && d <= 7 && !s.autoprolong) alert = true;
-      return `<div class="svc__row${muted?" svc__row--muted":""}">
+      return `<div class="svc__row${muted?" svc__row--muted":""}" id="svc-${a.id}-${s.id}" tabindex="-1">
         <div class="svc__name">${esc(s.name)} ${UI.Badge({ label: st.label, tone: st.tone, dot: true })}</div>
         <div class="svc__price">${esc(Fmt.money(s.price))} <small style="color:var(--color-text-tertiary);font-weight:400">${esc(Fmt.TERM[s.paymentTerm])}</small></div>
         <div class="svc__meta"><span class="${!s.autoprolong&&!muted?"is-alert":""}">Автопродление: ${s.autoprolong?"вкл.":"выкл."}</span><span>ID ${s.id}</span></div>
@@ -621,8 +641,8 @@
         </div>
         <label>Описание<textarea id="t-desc" rows="3" placeholder="Контекст решения"></textarea></label>
         <div class="modal-err" id="task-err" role="alert"></div>
-      </form>`,
-      `<div class="modal-foot">${UI.Button({label:"Создать",variant:"primary",attrs:{"data-action":"task-save"}})}</div>`);
+        <div class="modal-foot">${UI.Button({label:"Создать",variant:"primary",attrs:{"data-action":"task-save","type":"button"}})}</div>
+      </form>`);
     taskModal.open();
   }
 
@@ -665,13 +685,13 @@
         <label>Тема<input id="m-sub" required maxlength="200" value="Услуга и продление"></label>
         <label>Текст<textarea id="m-body" rows="6" required>${esc(tpl(accountId))}</textarea></label>
         <div class="modal-err" id="msg-err" role="alert"></div>
-      </form>`,
-      `<div class="modal-foot" style="display:flex;gap:8px;flex-wrap:wrap">
-        ${UI.Button({label:"Сохранить черновик",attrs:{"data-action":"msg-draft"}})}
-        ${UI.Button({label:"Копировать",variant:"ghost",attrs:{"data-action":"msg-copy"}})}
-        ${UI.Button({label:"Открыть в почте",variant:"ghost",attrs:{"data-action":"msg-mailto"}})}
-        ${UI.Button({label:"Отправить через сервер",variant:"primary",attrs:{"data-action":"msg-send"}})}
-      </div>`);
+        <div class="modal-foot" style="display:flex;gap:8px;flex-wrap:wrap">
+          ${UI.Button({label:"Сохранить черновик",attrs:{"data-action":"msg-draft","type":"button"}})}
+          ${UI.Button({label:"Копировать",variant:"ghost",attrs:{"data-action":"msg-copy","type":"button"}})}
+          ${UI.Button({label:"Открыть в почте",variant:"ghost",attrs:{"data-action":"msg-mailto","type":"button"}})}
+          ${UI.Button({label:"Отправить через сервер",variant:"primary",attrs:{"data-action":"msg-send","type":"button"}})}
+        </div>
+      </form>`);
     msgModal.open();
   }
   async function saveDraft(){
