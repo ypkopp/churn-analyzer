@@ -309,8 +309,10 @@
   /* scroll-lock фона при открытом меню */
   body.nav-open { overflow: hidden; }
 
-  .nav[data-open="true"] .nav__wordmark, .nav[data-open="true"] .nav__brand-sub { display: flex; }
-  .nav[data-open="true"] .nav__mark { display: none; }
+  /* Одна марка при открытом меню — компактный знак вместо повторного wordmark */
+  .nav[data-open="true"] .nav__wordmark { display: none; }
+  .nav[data-open="true"] .nav__mark { display: flex; }
+  .nav[data-open="true"] .nav__brand-sub { display: flex; }
   .nav[data-open="true"] .nav__brand { position: relative; width: 100%; }
   .nav[data-open="true"] .nav__section { padding-right: var(--space-2); }
   .nav[data-open="true"] .nav__user { margin-right: var(--space-2); }
