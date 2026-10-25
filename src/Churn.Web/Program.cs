@@ -553,6 +553,19 @@ app.MapPut("/api/v1/source/snapshot", async (SnapshotStore store,
     return Results.Ok(new { snapshotVersion = version, run?.EvaluationId, run?.AsOf });
 }).RequireAuthorization("AdminOnly");
 
+// Generate a deterministic synthetic snapshot (same contract as
+// data/raw/generate.py) — returns the DTO; the client routes it through the
+// normal PUT /source/snapshot so validation + atomic replace stay the only
+// write path. Admin only.
+app.MapPost("/api/v1/source/generate", (TimeProvider clock,
+    int? accounts, int? services, int? transactions, int? seed) =>
+{
+    var snap = Churn.Web.Services.SnapshotGenerator.Generate(
+        accounts ?? 10, services ?? 30, transactions ?? 100,
+        seed ?? 42, clock.GetUtcNow());
+    return Results.Ok(snap);
+}).RequireAuthorization("AdminOnly");
+
 // --- model settings: optimistic concurrency via expectedVersion -------------
 app.MapGet("/api/v1/model/settings", async (SnapshotStore store) =>
 {

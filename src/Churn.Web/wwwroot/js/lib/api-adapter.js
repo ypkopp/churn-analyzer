@@ -225,6 +225,14 @@
       return ok({ snapshotVersion: r.data.snapshotVersion, evaluationId: r.data.evaluationId, asOf: r.data.asOf });
     },
 
+    /* POST /api/v1/source/generate — deterministic synthetic snapshot DTO;
+       the client feeds it back through putSnapshot (the only write path). */
+    async genSnapshot(params) {
+      const q = params ? "?" + new URLSearchParams(params) : "";
+      const r = await req("POST", "/api/v1/source/generate" + q, {});
+      return r.ok ? ok(r.data) : r;
+    },
+
     /* POST /api/v1/auth/logout */
     async logout() {
       const r = await req("POST", "/api/v1/auth/logout", {});
