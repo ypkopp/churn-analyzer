@@ -80,6 +80,8 @@
   .submit:disabled { opacity: .7; cursor: default; }
   .submit .spin { display:none; width:14px;height:14px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;vertical-align:-2px;margin-right:8px;animation:sp .7s linear infinite; }
   .submit .spin.on { display:inline-block; }
+  .submit.demo { margin-top: 8px; background: var(--color-bg-sunken); color: var(--color-text-primary); border: var(--border-width) solid var(--color-border-default); }
+  .submit.demo:hover:not(:disabled) { background: var(--color-bg-hover); }
   @@keyframes sp { to { transform: rotate(360deg); } }
 
   @@media (max-width: 760px) {
@@ -125,6 +127,13 @@
 
       <div class="msg msg--err" id="err" role="alert" aria-live="polite">@Model.Error</div>
       <button class="submit" type="submit" id="submit"><span class="spin" hidden id="spin"></span><span id="submit-text">Войти</span></button>
+      @if (Model.DemoEnabled)
+      {
+        <button class="submit demo" type="submit" id="demo-btn" formnovalidate
+                onclick="document.getElementById('Login').value='demo';document.getElementById('Password').value='demo';">
+          Демо — войти без пароля
+        </button>
+      }
     </form>
   </main>
 </div>

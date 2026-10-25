@@ -10,11 +10,13 @@ using Churn.Web.Data;
 
 namespace Churn.Web.Pages;
 
-public class LoginModel(AppDb db, IPasswordHasher<AppUser> hasher) : PageModel
+public class LoginModel(AppDb db, IPasswordHasher<AppUser> hasher, IConfiguration cfg) : PageModel
 {
     [BindProperty, Required] public string Login { get; set; } = "";
     [BindProperty, Required, DataType(DataType.Password)] public string Password { get; set; } = "";
     public string Error { get; set; } = "";
+    // demo button is shown only when the stand opted in via Demo:Enabled.
+    public bool DemoEnabled => cfg.GetValue("Demo:Enabled", false);
 
     public IActionResult OnGet(string? returnUrl = null) =>
         User.Identity?.IsAuthenticated == true ? SafeRedirect(returnUrl) : Page();

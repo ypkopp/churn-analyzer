@@ -191,6 +191,21 @@ await using (var scope = app.Services.CreateAsyncScope())
             if (snap is not null) await store.ReplaceAsync(snap);
         }
     }
+
+    // Optional demo account — ONLY when Demo:Enabled=true. Created once,
+    // analyst role (not admin), fixed password "demo" for the stand so a jury
+    // member can sign in fast. Off by default; never touches real users.
+    if (builder.Configuration.GetValue("Demo:Enabled", false)
+        && !await db.Users.AnyAsync(u => u.Login == "demo"))
+    {
+        var hasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher<AppUser>>();
+        var demo = new AppUser { Login = "demo", Role = UserRoles.Analyst,
+            CreatedAt = TimeProvider.System.GetUtcNow(),
+            SecurityStamp = Guid.NewGuid().ToString("N") };
+        demo.PasswordHash = hasher.HashPassword(demo, "demo");
+        db.Users.Add(demo);
+        await db.SaveChangesAsync();
+    }
 }
 
 app.UseRateLimiter();

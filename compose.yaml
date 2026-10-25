@@ -37,6 +37,9 @@ services:
       # Narrow metrics-scrape credential: Prometheus sends Bearer token only
       # to /metrics. Server env only, never committed and not a cookie.
       Scraping__Token: ${SCRAPING_TOKEN:-}
+      # Optional demo sign-in button — creates a fixed demo/demo analyst once.
+      # Stand-only convenience; off by default, never on real deployments.
+      Demo__Enabled: ${DEMO_ENABLED:-false}
       # Optional AI brief — all from env on the server, never committed.
       # Endpoint must be HTTPS + in Ai__AllowedHosts; otherwise the feature is off.
       Ai__ApiKey: ${AI_API_KEY:-}
