@@ -889,22 +889,33 @@ app.MapGet("/api/v1/analytics/compare", async (AppDb db, Guid a, Guid b) =>
 // and the SAME asOf — without writing a batch or touching live settings.
 // Marked "scenario, not applied" — never publishable.
 app.MapPost("/api/v1/analytics/whatif", async (AppDb db,
-    TimeProvider clock, WhatIfRequest req) =>
+    TimeProvider clock, HttpContext http) =>
 {
     var snapRow = await db.Snapshots.OrderByDescending(s => s.SnapshotVersion).FirstOrDefaultAsync();
     if (snapRow is null) return Results.Ok(new { state = "no_data" });
     var settingsRow = await db.ModelSettings.OrderByDescending(m => m.ModelVersion).FirstOrDefaultAsync();
     var baseSettings = Churn.Web.Services.EvaluationService.ToCoreSettings(settingsRow) ?? Churn.Core.ModelSettings.Baseline();
-    // same non-writing validator as PATCH — explicit invalid fields -> 400,
-    // missing settings -> documented baseline-only scenario.
-    if (req?.Settings is not null)
+    // Read the body explicitly — a record-parameter bind that silently yields a
+    // default would mask bad settings as the baseline scenario (200, not 400).
+    ModelSettingsDto? provided = null;
+    JsonDocument? body = null;
+    try { body = await JsonDocument.ParseAsync(http.Request.Body); }
+    catch { return Results.BadRequest(Err("invalid_settings", "malformed json")); }
+    using (body)
     {
-        var invalid = InputValidator.ModelSettings(req.Settings);
+        if (body.RootElement.ValueKind == JsonValueKind.Object
+            && body.RootElement.TryGetProperty("settings", out var sEl)
+            && sEl.ValueKind == JsonValueKind.Object)
+            provided = sEl.Deserialize<ModelSettingsDto>(Jopts);
+    }
+    if (provided is not null)
+    {
+        var invalid = InputValidator.ModelSettings(provided);
         if (invalid is not null)
             return Results.BadRequest(Err("invalid_settings", invalid));
     }
-    var scenario = req?.Settings is not null
-        ? Churn.Web.Services.EvaluationService.ToCoreSettings(req.Settings) : baseSettings;
+    var scenario = provided is not null
+        ? Churn.Web.Services.EvaluationService.ToCoreSettings(provided) : baseSettings;
     var snap = JsonSerializer.Deserialize<SourceSnapshotDto>(snapRow.Payload, Jopts)!;
     var asOf = clock.GetUtcNow();   // shared by baseline AND scenario — no time skew
     var ctxB = new Churn.Core.EvaluationContext(asOf, baseSettings.HorizonDays,
