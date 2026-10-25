@@ -52,7 +52,7 @@
           <p class="head__sub">Кому уделить внимание, почему клиент может не продлить услуги и какая сумма продлений под риском.</p>
         </div>
         <div class="head__actions">
-          ${UI.Button({ label: "Экспорт CSV", icon: "download", disabled: true, disabledReason: "Экспорт не реализован", tipPos: "end" })}
+          ${UI.Button({ label: "Экспорт CSV", icon: "download", attrs: { "data-action": "csv-export" } })}
           ${UI.Button({ label: "Перечитать", icon: "refresh", spinIcon: true, pending: anyLoading(), attrs: { "data-action": "reload", "aria-label": "Перечитать" } })}
         </div>
       </div>
@@ -116,6 +116,11 @@
       <div class="toolbar__mobile-sort">${UI.Select({ id: "mobile-sort", value: "score:desc", options: MOBILE_SORTS.map(([value,label])=>({value,label})), attrs: { "aria-label": "Сортировка" } })}</div>
       <div class="toolbar__spacer"></div>
       <div class="toolbar__count" id="result-count" aria-live="polite"></div>`;
+    $("#toolbar-extra").innerHTML = `
+      <div class="toolbar__spacer"></div>
+      ${UI.Button({ label: "Сохранить сегмент", variant: "ghost", size: "sm", attrs: { "data-action": "seg-save" } })}
+      ${UI.Button({ label: "AI-резюме", variant: "ghost", size: "sm", attrs: { "data-action": "ai-brief" } })}
+      <div id="ai-brief-out" class="ai-brief-slot" aria-live="polite"></div>`;
   }
   function renderFilter() {
     const c = state.counts;
@@ -412,9 +417,10 @@
       ${!isNone?warnings:""}
     </div>
     <div class="c-drawer__foot">
-      ${UI.Button({ label:"Создать задачу на удержание", variant:"primary", disabled:true, disabledReason:"Интеграция с CRM не входит в эту версию" })}
-      ${UI.Button({ label:"Написать клиенту", disabled:true, disabledReason:"Отправка писем не подключена" })}
-    </div>`;
+      ${UI.Button({ label:"Создать задачу на удержание", variant:"primary", attrs:{ "data-action":"task-new", "data-id": a.id } })}
+      ${UI.Button({ label:"Написать клиенту", attrs:{ "data-action":"msg-new", "data-id": a.id, "data-email": a.email } })}
+    </div>
+    <div class="c-drawer__sec" id="cust-tasks-${a.id}" data-account="${a.id}"></div>`;
   }
 
   /* ------------------------------------------------ Events */
@@ -440,6 +446,18 @@
       else if(a==="nav-toggle")toggleNav();
       else if(a==="nav-close")closeNav({returnFocus:true});
       else if(a==="nav-backdrop")closeNav({returnFocus:true});
+      else if(a==="task-new"){ openTaskModal(+t.dataset.id); }
+      else if(a==="msg-new"){ openMsgModal(+t.dataset.id, t.dataset.email); }
+      else if(a==="task-save"){ saveTask(t); }
+      else if(a==="task-status"){ setTaskStatus(+t.dataset.id, t.dataset.status); }
+      else if(a==="msg-draft"){ saveDraft(t); }
+      else if(a==="msg-copy"){ copyDraft(t); }
+      else if(a==="msg-mailto"){ openMailto(t); }
+      else if(a==="msg-send"){ sendDraft(t); }
+      else if(a==="tasks-open"){ openTasksView(); }
+      else if(a==="ai-brief"){ runAiBrief(); }
+      else if(a==="seg-save"){ saveSegment(); }
+      else if(a==="csv-export"){ exportCsv(); }
     });
     $("#table-region").addEventListener("keydown",(e)=>{
       const tr=e.target.closest("tr[data-id]"); if(!tr)return;
@@ -553,7 +571,189 @@
     await load(); startPolling();
     document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) pollTick(); });
   }
+  /* ================= tasks + messages + segments + ai ================= */
+  let usersCache = null;
+  async function activeUsers() {
+    if (!usersCache) { const r = await api.activeUsers(); usersCache = r.ok ? (r.data||[]) : []; }
+    return usersCache;
+  }
+  const taskModal = new UI.Modal({ id: "task-modal", title: "Задача на удержание" });
+  const msgModal  = new UI.Modal({ id: "msg-modal",  title: "Написать клиенту" });
+  let curTaskAccount = 0, curMsgAccount = 0, curMsgEmail = "";
+
+  async function openTaskModal(accountId) {
+    curTaskAccount = accountId;
+    const users = await activeUsers();
+    const opts = users.filter(u=>!u.disabled).map(u=>`<option value="${u.id}">${esc(u.login)} (${esc(u.role)})</option>`).join("");
+    taskModal.setContent(`
+      <form id="task-form" class="modal-form">
+        <label>Заголовок<input id="t-title" required maxlength="200" placeholder="Связаться по продлению"></label>
+        <label>Клиент <input value="ID ${accountId}" disabled></label>
+        <label>Ответственный<select id="t-assignee">${opts}</select></label>
+        <div class="form-row">
+          <label>Срок<input id="t-due" type="date"></label>
+          <label>Приоритет<select id="t-pri"><option value="high">Высокий</option><option value="normal" selected>Обычный</option><option value="low">Низкий</option></select></label>
+        </div>
+        <label>Описание<textarea id="t-desc" rows="3" placeholder="Контекст решения"></textarea></label>
+        <div class="modal-err" id="task-err" role="alert"></div>
+      </form>`,
+      `<div class="modal-foot">${UI.Button({label:"Создать",variant:"primary",attrs:{"data-action":"task-save"}})}</div>`);
+    taskModal.open();
+  }
+
+  async function saveTask() {
+    const title=$("#t-title")?.value.trim(), err=$("#task-err");
+    if(!title){err.textContent="Укажите заголовок.";return;}
+    err.textContent="";
+    const r=await api.createTask({accountId:curTaskAccount,title,
+      assigneeUserId:+$("#t-assignee").value,dueAt:$("#t-due").value||null,
+      priority:$("#t-pri").value,description:$("#t-desc").value||null});
+    if(r.ok){taskModal.close();UI.Toast.show({title:"Задача создана"});loadCustomerTasks(curTaskAccount);renderTasksNav?.();}
+    else err.textContent=r.error?.message||"Не удалось сохранить.";
+  }
+
+  async function loadCustomerTasks(accountId){
+    const el=document.getElementById("cust-tasks-"+accountId); if(!el)return;
+    const r=await api.customerTasks(accountId);
+    const tasks=r.ok?(r.data||[]):[];
+    el.innerHTML=`<section class="sec"><h3 class="sec__title">Задачи ${tasks.length?`<small>${tasks.length}</small>`:""}</h3>`+
+      (tasks.length?tasks.map(t=>`<div class="taskrow"><span class="taskrow__title">${esc(t.title)}</span>
+        <span class="taskrow__meta">${esc(t.status)} · ${esc(t.assigneeLogin)}${t.dueAt?" · "+Fmt.date(t.dueAt):""}</span></div>`).join("")
+      :`<p class="sec__note" style="margin:0">Задач нет.</p>`)+`</section>`;
+  }
+  window.loadCustomerTasks=loadCustomerTasks;
+
+  /* -------- message draft -------- */
+  const TEMPLATES={
+    expiring_no_autoprolong:(a)=>`Здравствуйте! Услуга у вас истекает без автопродления — свяжемся, чтобы продлить.`,
+    prolong_wait:(a)=>`Здравствуйте! Заметили услугу, ожидающую оплаты продления — уточним, нужно ли продлить.`,
+    suspended:(a)=>`Здравствуйте! Часть услуг приостановлена — подскажем, как возобновить.`,
+    insufficient_funds:(a)=>`Здравствуйте! На балансе может не хватить на ближайшие продления — поможем пополнить.`,
+    no_assessment:(a)=>`Здравствуйте! Уточним детали вашей подписки.`
+  };
+  async function openMsgModal(accountId,email){
+    curMsgAccount=accountId;curMsgEmail=email;
+    const tpl=TEMPLATES[ (await api.getCustomer(accountId))?.data?.assessment?.reasons?.[0] ]||TEMPLATES.no_assessment;
+    msgModal.setContent(`
+      <form id="msg-form" class="modal-form">
+        <label>Получатель<input id="m-to" value="${esc(email)}" disabled></label>
+        <label>Тема<input id="m-sub" required maxlength="200" value="Услуга и продление"></label>
+        <label>Текст<textarea id="m-body" rows="6" required>${esc(tpl(accountId))}</textarea></label>
+        <div class="modal-err" id="msg-err" role="alert"></div>
+      </form>`,
+      `<div class="modal-foot" style="display:flex;gap:8px;flex-wrap:wrap">
+        ${UI.Button({label:"Сохранить черновик",attrs:{"data-action":"msg-draft"}})}
+        ${UI.Button({label:"Копировать",variant:"ghost",attrs:{"data-action":"msg-copy"}})}
+        ${UI.Button({label:"Открыть в почте",variant:"ghost",attrs:{"data-action":"msg-mailto"}})}
+        ${UI.Button({label:"Отправить через сервер",variant:"primary",attrs:{"data-action":"msg-send"}})}
+      </div>`);
+    msgModal.open();
+  }
+  async function saveDraft(){
+    const body=$("#m-body")?.value,sub=$("#m-sub")?.value,err=$("#msg-err");
+    if(!sub||!body){err.textContent="Тема и текст обязательны.";return null;}
+    const r=await api.createMessage({accountId:curMsgAccount,recipient:curMsgEmail,subject:sub,body});
+    if(!r.ok){err.textContent=r.error?.message||"Не удалось сохранить.";return null;}
+    return r.data;
+  }
+  async function copyDraft(){
+    const body=$("#m-body")?.value||"";
+    try{await navigator.clipboard.writeText(`To: ${curMsgEmail}\nSubject: ${$("#m-sub").value}\n\n${body}`);UI.Toast.show({title:"Скопировано"});}catch{UI.Toast.show({title:"Не удалось скопировать",tone:"error"});}
+  }
+  function openMailto(){
+    const sub=$("#m-sub").value,body=$("#m-body").value;
+    saveDraft().then(d=>{ if(d)api.listMessages&&fetch(`/api/v1/messages/${d.id}/prepared`,{method:"POST",headers:{"X-CSRF-TOKEN":csrfToken()}}); });
+    location.href=`mailto:${encodeURIComponent(curMsgEmail)}?subject=${encodeURIComponent(sub)}&body=${encodeURIComponent(body)}`;
+  }
+  async function sendDraft(){
+    const d=await saveDraft(); if(!d)return;
+    const r=await api.sendMessage(d.id);
+    const err=$("#msg-err");
+    if(r.ok){UI.Toast.show({title:"Отправлено"});msgModal.close();}
+    else err.textContent="Отправка недоступна: "+(r.error?.message||r.error?.code||"ошибка транспорта");
+  }
+  function csrfToken(){return document.cookie.split("; ").find(c=>c.startsWith("churn.csrf="))?.split("=")[1]||"";}
+
+  /* -------- segments -------- */
+  async function saveSegment(){
+    const name=prompt("Имя сегмента:");if(!name)return;
+    const q=new URLSearchParams({q:state.q,level:state.level,sort:state.sort,dir:state.dir}).toString();
+    const r=await api.createSegment({name,query:q});
+    if(r.ok)UI.Toast.show({title:"Сегмент сохранён"});
+  }
+  window.saveSegment=saveSegment;
+
+  /* -------- ai brief -------- */
+  async function runAiBrief(){
+    const el=$("#ai-brief-out");if(el)el.innerHTML=UI.Spinner("Запрос у модели…");
+    const r=await api.aiBrief();
+    if(r.ok){
+      const d=r.data;
+      el.innerHTML=`<div class="ai-brief"><div class="ai-brief__meta">AI-резюме · ${esc(d.model||"model")} · evaluationId ${esc(String(d.evaluationId).slice(0,8))} · asOf ${esc(Fmt.dateTime(d.asOf))} · требует проверки</div><div class="ai-brief__text">${esc(d.brief||"")}</div>${d.cached?`<div class="sec__note">из кэша батча</div>`:""}</div>`;
+    } else {
+      el.innerHTML=`<div class="analytics__empty">AI-резюме недоступно: ${esc(r.error?.message||r.error?.code||"")}</div>`;
+    }
+  }
+  window.runAiBrief=runAiBrief;
+
+  /* -------- tasks view (full section) -------- */
+  function openTasksView(){
+    // swap the table region for the tasks list (keeps nav + polling untouched)
+    const main = $("#table-region");
+    if (!main) return;
+    main.innerHTML = `<div id="tasks-view"><div class="toolbar">${UI.Skeleton("40%")}</div></div>`;
+    loadTasksInto(main);
+  }
+  async function loadTasksInto(main){
+    const r = await api.listTasks({});
+    const tasks = r.ok ? (r.data||[]) : [];
+    main.innerHTML = `
+      <div class="tasks-head"><h2>Задачи на удержание</h2>
+        <input id="task-search" class="c-input" placeholder="Поиск по заголовку" style="max-width:240px"></div>
+      <div id="tasks-list"></div>`;
+    const list = main.querySelector("#tasks-list");
+    const rows = tasks.map(t=>`
+      <div class="taskrow" data-id="${t.id}">
+        <div class="taskrow__main"><div class="taskrow__title">${esc(t.title)}</div>
+          <div class="taskrow__meta">клиент ID ${t.accountId} · ${esc(t.assigneeLogin)} · ${esc(t.status)}${t.dueAt?` · ${Fmt.date(t.dueAt)}`:""}${!t.customerAvailable?` · <em title="клиент не в текущем батче">данные недоступны</em>`:""}</div></div>
+        <select class="c-select taskrow__st" data-id="${t.id}">
+          ${["new","in_progress","done","cancelled"].map(s=>`<option value="${s}"${s===t.status?" selected":""}>${s}</option>`).join("")}
+        </select>
+      </div>`).join("");
+    list.innerHTML = tasks.length ? rows : `<p class="sec__note">Задач пока нет.</p>`;
+    list.addEventListener("change", async (e)=>{
+      const sel=e.target.closest(".taskrow__st"); if(!sel)return;
+      const r2=await api.setTaskStatus(+sel.dataset.id,sel.value);
+      if(r2.ok)loadTasksInto(main);
+    });
+    main.querySelector("#task-search").addEventListener("input",async(e)=>{
+      const rr=await api.listTasks({q:e.target.value});
+      const tt=rr.ok?(rr.data||[]):[];
+      list.innerHTML=tt.map(t=>`<div class="taskrow"><div class="taskrow__main"><div class="taskrow__title">${esc(t.title)}</div><div class="taskrow__meta">ID ${t.accountId} · ${esc(t.status)}</div></div></div>`).join("")||`<p class="sec__note">Ничего не найдено.</p>`;
+    });
+  }
+
+  /* -------- csv export -------- */
+  function csvCell(v){
+    const s=String(v??"");
+    // spreadsheet formula injection guard
+    const lead = /^[=+\-@\t\r]/.test(s) ? "'" : "";
+    return `"${lead}${s.replace(/"/g,'""')}"`;
+  }
+  function exportCsv(){
+    const rows=state.rows||[];
+    const header=["ID","Email","Баланс (EUR cents)","Пополнено (EUR cents)","Score","Уровень риска","Причины"];
+    const lines=[header.map(csvCell).join(",")];
+    for(const r of rows){
+      lines.push([r.id,r.email,r.balanceCents,r.totalReplenishedCents,r.score??"no_assessment",r.level,(r.reasons||[]).join(" | ")].map(csvCell).join(","));
+    }
+    const blob=new Blob([lines.join("\r\n")],{type:"text/csv;charset=utf-8"});
+    const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+    a.download=`tethered-customers-${new Date().toISOString().slice(0,10)}.csv`;a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
   window.CustomersPage = { reload: load, state, channels: ch, startPolling, stopPolling,
-    onSettingsSaved() { /* новый evaluationId придёт с polling или reload */ pollTick(); } };
+    onSettingsSaved() { pollTick(); } };
   document.addEventListener("DOMContentLoaded", init);
 })();

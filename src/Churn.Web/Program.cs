@@ -551,6 +551,216 @@ app.MapPatch("/api/v1/model/settings", async (SnapshotStore store,
     return Results.Ok(new { modelVersion = row!.ModelVersion, run?.EvaluationId, run?.AsOf });
 }).RequireAuthorization("AnalystOrAdmin");
 
+// --- retention tasks --------------------------------------------------------
+// Helper: project a task + whether its customer still exists in the latest batch.
+static async Task<TaskDto> TaskDtoOf(AppDb db, RetentionTask t)
+{
+    var assignee = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == t.AssigneeUserId);
+    var run = await db.EvalRuns.OrderByDescending(r => r.CreatedAt).FirstOrDefaultAsync();
+    var avail = run is not null && await db.CustomerResults
+        .AnyAsync(x => x.EvaluationId == run.EvaluationId && x.AccountId == t.AccountId);
+    return new TaskDto(t.Id, t.AccountId, t.Title, t.AssigneeUserId,
+        assignee?.Login ?? "?", t.DueAt, t.Priority, t.Description, t.Status,
+        t.EvaluationId, t.AsOf, t.CreatedAt, t.CompletedAt, avail);
+}
+
+// list tasks — filter by status/assignee/account, search by title.
+app.MapGet("/api/v1/tasks", async (AppDb db, string? status, long? assignee, long? accountId, string? q) =>
+{
+    var query = db.RetentionTasks.AsNoTracking().AsQueryable();
+    if (!string.IsNullOrEmpty(status)) query = query.Where(t => t.Status == status);
+    if (assignee.HasValue) query = query.Where(t => t.AssigneeUserId == assignee.Value);
+    if (accountId.HasValue) query = query.Where(t => t.AccountId == accountId.Value);
+    if (!string.IsNullOrWhiteSpace(q)) query = query.Where(t => t.Title.Contains(q));
+    var tasks = await query.OrderByDescending(t => t.CreatedAt).ToListAsync();
+    var list = new List<TaskDto>();
+    foreach (var t in tasks) list.Add(await TaskDtoOf(db, t));
+    return Results.Ok(list);
+}).RequireAuthorization("AnalystOrAdmin");
+
+// create from a customer card — bound to the current batch for decision context.
+app.MapPost("/api/v1/tasks", async (AppDb db, ClaimsPrincipal p, CreateTaskRequest req) =>
+{
+    if (string.IsNullOrWhiteSpace(req.Title)) return Results.BadRequest(Err("invalid_title", "required"));
+    if (req.Priority is not ("high" or "normal" or "low")) req = req with { Priority = "normal" };
+    var run = await db.EvalRuns.OrderByDescending(r => r.CreatedAt).FirstOrDefaultAsync();
+    var me = await db.Users.FirstOrDefaultAsync(u => u.Login == p.Identity!.Name);
+    var assignee = await db.Users.FirstOrDefaultAsync(u => u.Id == req.AssigneeUserId && !u.Disabled);
+    if (assignee is null) return Results.BadRequest(Err("invalid_assignee", "active user required"));
+    var t = new RetentionTask
+    {
+        Title = req.Title.Trim(), AccountId = req.AccountId,
+        AssigneeUserId = assignee.Id, DueAt = req.DueAt, Priority = req.Priority,
+        Description = req.Description, Status = TaskStatuses.New,
+        EvaluationId = run?.EvaluationId ?? Guid.Empty,
+        AsOf = run?.AsOf ?? TimeProvider.System.GetUtcNow(),
+        CreatedAt = TimeProvider.System.GetUtcNow(),
+    };
+    db.RetentionTasks.Add(t);
+    await db.SaveChangesAsync();
+    db.TaskEvents.Add(new TaskEvent { TaskId = t.Id, ToStatus = TaskStatuses.New,
+        ByUserId = me?.Id ?? 0, At = t.CreatedAt });
+    await db.SaveChangesAsync();
+    return Results.Created($"/api/v1/tasks/{t.Id}", await TaskDtoOf(db, t));
+}).RequireAuthorization("AnalystOrAdmin");
+
+// edit fields (title/due/priority/description) — not status (use the status endpoint).
+app.MapPatch("/api/v1/tasks/{id:long}", async (long id, AppDb db, UpdateTaskRequest req) =>
+{
+    var t = await db.RetentionTasks.FirstOrDefaultAsync(x => x.Id == id);
+    if (t is null) return Results.NotFound(Err("not_found", "task"));
+    if (req.Title is not null) t.Title = req.Title.Trim();
+    if (req.DueAt is not null) t.DueAt = req.DueAt;
+    if (req.Priority is not null) t.Priority = req.Priority;
+    if (req.Description is not null) t.Description = req.Description;
+    await db.SaveChangesAsync();
+    return Results.Ok(await TaskDtoOf(db, t));
+}).RequireAuthorization("AnalystOrAdmin");
+
+// change status with an append-only journal entry.
+app.MapPost("/api/v1/tasks/{id:long}/status", async (long id, AppDb db,
+    ClaimsPrincipal p, TaskStatusRequest req) =>
+{
+    var t = await db.RetentionTasks.FirstOrDefaultAsync(x => x.Id == id);
+    if (t is null) return Results.NotFound(Err("not_found", "task"));
+    if (req.Status is not (TaskStatuses.New or TaskStatuses.InProgress or TaskStatuses.Done or TaskStatuses.Cancelled))
+        return Results.BadRequest(Err("invalid_status", "new|in_progress|done|cancelled"));
+    var me = await db.Users.FirstOrDefaultAsync(u => u.Login == p.Identity!.Name);
+    db.TaskEvents.Add(new TaskEvent { TaskId = t.Id, FromStatus = t.Status,
+        ToStatus = req.Status, Note = req.Note, At = TimeProvider.System.GetUtcNow(),
+        ByUserId = me?.Id ?? 0 });
+    t.Status = req.Status;
+    t.CompletedAt = req.Status is TaskStatuses.Done or TaskStatuses.Cancelled
+        ? TimeProvider.System.GetUtcNow() : null;
+    await db.SaveChangesAsync();
+    return Results.Ok(await TaskDtoOf(db, t));
+}).RequireAuthorization("AnalystOrAdmin");
+
+// journal for one task — append-only status history.
+app.MapGet("/api/v1/tasks/{id:long}/events", async (long id, AppDb db) =>
+{
+    var ev = await db.TaskEvents.Where(x => x.TaskId == id).OrderBy(x => x.At).ToListAsync();
+    return Results.Ok(ev.Select(e => new { e.FromStatus, e.ToStatus, e.Note, e.At, e.ByUserId }));
+}).RequireAuthorization("AnalystOrAdmin");
+
+// tasks linked to one customer (for the card) — plus whether customer is in
+// the current batch (so a stale task shows "customer data unavailable").
+app.MapGet("/api/v1/customers/{id:long}/tasks", async (long id, AppDb db) =>
+{
+    var tasks = await db.RetentionTasks.Where(t => t.AccountId == id)
+        .OrderByDescending(t => t.CreatedAt).ToListAsync();
+    var list = new List<TaskDto>();
+    foreach (var t in tasks) list.Add(await TaskDtoOf(db, t));
+    return Results.Ok(list);
+}).RequireAuthorization("AnalystOrAdmin");
+
+// --- contact messages: draft / mailto-prepared / sent (if transport set) ------
+app.MapGet("/api/v1/messages", async (long? accountId, AppDb db) =>
+{
+    var q = db.ContactMessages.AsNoTracking().AsQueryable();
+    if (accountId.HasValue) q = q.Where(m => m.AccountId == accountId.Value);
+    var list = await q.OrderByDescending(m => m.CreatedAt).ToListAsync();
+    return Results.Ok(list.Select(m => new MessageDto(m.Id, m.AccountId, m.Recipient,
+        m.Subject, m.Body, m.Status, m.TransportNote, m.EvaluationId, m.AsOf,
+        m.CreatedAt, m.SentAt)));
+}).RequireAuthorization("AnalystOrAdmin");
+
+app.MapPost("/api/v1/messages", async (AppDb db, ClaimsPrincipal p, CreateMessageRequest req) =>
+{
+    if (string.IsNullOrWhiteSpace(req.Subject) || string.IsNullOrWhiteSpace(req.Body))
+        return Results.BadRequest(Err("invalid_message", "subject+body required"));
+    var run = await db.EvalRuns.OrderByDescending(r => r.CreatedAt).FirstOrDefaultAsync();
+    var m = new ContactMessage
+    {
+        AccountId = req.AccountId, Recipient = req.Recipient,
+        Subject = req.Subject.Trim(), Body = req.Body, Status = "draft",
+        EvaluationId = run?.EvaluationId ?? Guid.Empty,
+        AsOf = run?.AsOf ?? TimeProvider.System.GetUtcNow(),
+        CreatedAt = TimeProvider.System.GetUtcNow(),
+    };
+    db.ContactMessages.Add(m); await db.SaveChangesAsync();
+    return Results.Created($"/api/v1/messages/{m.Id}",
+        new MessageDto(m.Id, m.AccountId, m.Recipient, m.Subject, m.Body,
+            m.Status, m.TransportNote, m.EvaluationId, m.AsOf, m.CreatedAt, m.SentAt));
+}).RequireAuthorization("AnalystOrAdmin");
+
+// mark as prepared-for-mailto (a draft the user opened in their mail client).
+app.MapPost("/api/v1/messages/{id:long}/prepared", async (long id, AppDb db) =>
+{
+    var m = await db.ContactMessages.FirstOrDefaultAsync(x => x.Id == id);
+    if (m is null) return Results.NotFound(Err("not_found", "message"));
+    m.Status = "prepared"; await db.SaveChangesAsync();
+    return Results.NoContent();
+}).RequireAuthorization("AnalystOrAdmin");
+
+// send via configured SMTP/API transport. When unset, reports unavailable
+// (not a fake success). SMTP/API secrets live only in server env.
+app.MapPost("/api/v1/messages/{id:long}/send", async (long id, AppDb db,
+    IConfiguration cfg) =>
+{
+    var m = await db.ContactMessages.FirstOrDefaultAsync(x => x.Id == id);
+    if (m is null) return Results.NotFound(Err("not_found", "message"));
+    var transport = cfg["Smtp:Transport"] ?? Environment.GetEnvironmentVariable("Smtp__Transport");
+    if (string.IsNullOrEmpty(transport))
+    {
+        m.Status = "error"; m.TransportNote = "smtp_not_configured";
+        await db.SaveChangesAsync();
+        return Results.Json(Err("transport_unavailable",
+            "email transport is not configured on this stand"), statusCode: 503);
+    }
+    try
+    {
+        // place-holder for real SMTP/API send — transport value is an opaque URI.
+        m.Status = "error"; m.TransportNote = "transport_stub";
+        await db.SaveChangesAsync();
+        return Results.Json(Err("transport_stub", "transport configured but send not implemented"), statusCode: 503);
+    }
+    catch { m.Status = "error"; m.TransportNote = "send_failed"; await db.SaveChangesAsync();
+        return Results.Json(Err("send_failed"), statusCode: 502); }
+}).RequireAuthorization("AnalystOrAdmin");
+
+// --- saved segments (per-user filter presets, evaluated on current batch) -----
+app.MapGet("/api/v1/segments", async (AppDb db, ClaimsPrincipal p) =>
+{
+    var me = await db.Users.FirstOrDefaultAsync(u => u.Login == p.Identity!.Name);
+    if (me is null) return Results.Unauthorized();
+    var list = await db.SavedSegments.Where(s => s.OwnerUserId == me.Id)
+        .OrderBy(s => s.CreatedAt).ToListAsync();
+    return Results.Ok(list.Select(s => new SegmentDto(s.Id, s.Name, s.Query ?? "", s.CreatedAt)));
+}).RequireAuthorization("AnalystOrAdmin");
+
+app.MapPost("/api/v1/segments", async (AppDb db, ClaimsPrincipal p, CreateSegmentRequest req) =>
+{
+    if (string.IsNullOrWhiteSpace(req.Name)) return Results.BadRequest(Err("invalid_name", "required"));
+    var me = await db.Users.FirstOrDefaultAsync(u => u.Login == p.Identity!.Name);
+    if (me is null) return Results.Unauthorized();
+    var s = new SavedSegment { OwnerUserId = me.Id, Name = req.Name.Trim(),
+        Query = req.Query ?? "", CreatedAt = TimeProvider.System.GetUtcNow() };
+    db.SavedSegments.Add(s); await db.SaveChangesAsync();
+    return Results.Created($"/api/v1/segments/{s.Id}", new SegmentDto(s.Id, s.Name, s.Query, s.CreatedAt));
+}).RequireAuthorization("AnalystOrAdmin");
+
+app.MapPatch("/api/v1/segments/{id:long}", async (long id, AppDb db,
+    ClaimsPrincipal p, CreateSegmentRequest req) =>
+{
+    var me = await db.Users.FirstOrDefaultAsync(u => u.Login == p.Identity!.Name);
+    var s = await db.SavedSegments.FirstOrDefaultAsync(x => x.Id == id && x.OwnerUserId == me!.Id);
+    if (s is null) return Results.NotFound(Err("not_found", "segment"));
+    if (!string.IsNullOrWhiteSpace(req.Name)) s.Name = req.Name.Trim();
+    if (req.Query is not null) s.Query = req.Query;
+    await db.SaveChangesAsync();
+    return Results.NoContent();
+}).RequireAuthorization("AnalystOrAdmin");
+
+app.MapDelete("/api/v1/segments/{id:long}", async (long id, AppDb db, ClaimsPrincipal p) =>
+{
+    var me = await db.Users.FirstOrDefaultAsync(u => u.Login == p.Identity!.Name);
+    var s = await db.SavedSegments.FirstOrDefaultAsync(x => x.Id == id && x.OwnerUserId == me!.Id);
+    if (s is null) return Results.NotFound(Err("not_found", "segment"));
+    db.SavedSegments.Remove(s); await db.SaveChangesAsync();
+    return Results.NoContent();
+}).RequireAuthorization("AnalystOrAdmin");
+
 // --- /metrics: Prometheus exposition from the latest PUBLISHED batch --------
 // Values all come from ONE eval run — no recalculation on scrape.
 app.MapGet("/metrics", async (AppDb db) =>

@@ -402,3 +402,19 @@
 @media (max-width: 760px) {
   .analytics__grid { grid-template-columns: 1fr; }
 }
+
+/* ---------------- tasks / messages / segments / ai ---------------- */
+.modal-form { display:flex; flex-direction:column; gap:10px; }
+.modal-form label { display:flex; flex-direction:column; gap:4px; font:var(--weight-semibold) var(--text-sm)/1 var(--font-sans); color:var(--color-text-secondary); }
+.modal-form input,.modal-form select,.modal-form textarea { font:var(--text-md) var(--font-sans); padding:9px 10px; border:var(--border-width) solid var(--color-border-default); border-radius:var(--radius-md); background:var(--color-bg-surface); color:var(--color-text-primary); }
+.modal-form input:focus-visible,.modal-form select:focus-visible,.modal-form textarea:focus-visible { outline:none; border-color:var(--color-accent); box-shadow:var(--focus-ring); }
+.modal-form .form-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.modal-err { min-height:1.2em; font-size:var(--text-sm); color:var(--color-danger-fg); }
+.taskrow { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 12px; border:var(--border-width) solid var(--color-border-default); border-radius:var(--radius-md); background:var(--color-bg-surface); margin-bottom:8px; }
+.taskrow__title { font:var(--weight-semibold) var(--text-md)/var(--lh-md) var(--font-sans); color:var(--color-text-primary); }
+.taskrow__meta { font-size:var(--text-xs); color:var(--color-text-secondary); }
+.taskrow__st { width:auto; }
+.ai-brief-slot { grid-column:1/-1; }
+.ai-brief { background:var(--color-accent-subtle); border:1px solid var(--color-border-default); border-radius:var(--radius-md); padding:12px 14px; font-size:var(--text-sm); color:var(--color-text-primary); }
+.ai-brief__meta { font-size:var(--text-2xs); color:var(--color-text-tertiary); margin-bottom:6px; font-family:var(--font-mono); }
+.ai-brief__text { white-space:pre-wrap; line-height:var(--lh-md); }

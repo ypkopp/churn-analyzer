@@ -156,6 +156,26 @@
         snapshotVersion: d.snapshotVersion, modelVersion: d.modelVersion } });
     },
 
+    /* tasks */
+    async listTasks(p){ const r=await req("GET","/api/v1/tasks"+(p?"?"+new URLSearchParams(p):""));return r.ok?ok(r.data):r; },
+    async createTask(b){ const r=await req("POST","/api/v1/tasks",b);return r.ok?ok(r.data):r; },
+    async updateTask(id,b){ const r=await req("PATCH","/api/v1/tasks/"+id,b);return r.ok?ok(r.data):r; },
+    async setTaskStatus(id,status,note){ const r=await req("POST",`/api/v1/tasks/${id}/status`,{status,note});return r.ok?ok(r.data):r; },
+    async taskEvents(id){ const r=await req("GET",`/api/v1/tasks/${id}/events`);return r.ok?ok(r.data):r; },
+    async customerTasks(id){ const r=await req("GET",`/api/v1/customers/${id}/tasks`);return r.ok?ok(r.data):r; },
+    async activeUsers(){ const r=await req("GET","/api/v1/admin/users");return r.ok?ok(r.data):r; },
+    /* messages */
+    async listMessages(accountId){ const r=await req("GET","/api/v1/messages?accountId="+accountId);return r.ok?ok(r.data):r; },
+    async createMessage(b){ const r=await req("POST","/api/v1/messages",b);return r.ok?ok(r.data):r; },
+    async sendMessage(id){ const r=await req("POST",`/api/v1/messages/${id}/send`,{});return r; },
+    /* ai */
+    async aiBrief(){ const r=await req("POST","/api/v1/ai/brief",{});return r; },
+    /* segments */
+    async listSegments(){ const r=await req("GET","/api/v1/segments");return r.ok?ok(r.data):r; },
+    async createSegment(b){ const r=await req("POST","/api/v1/segments",b);return r.ok?ok(r.data):r; },
+    async deleteSegment(id){ const r=await req("DELETE","/api/v1/segments/"+id);return r; },
+    async patchSegment(id,b){ const r=await req("PATCH","/api/v1/segments/"+id,b);return r.ok?ok(r.data):r; },
+
     /* GET /api/v1/model/settings */
     async getModelSettings() {
       const r = await req("GET", "/api/v1/model/settings");
