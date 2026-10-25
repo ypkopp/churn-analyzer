@@ -433,6 +433,10 @@
 /* ---------------- next actions (P03) ---------------- */
 .na-list { margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:6px; }
 .na-item { padding:8px 10px; border:var(--border-width) solid var(--color-border-default); border-radius:var(--radius-md); background:var(--color-bg-surface); }
+.na-item[data-service] { cursor:pointer; }
+.na-item[data-service]:hover { border-color:var(--color-accent); }
+.na-item[data-service]:focus-visible { outline:none; box-shadow:var(--focus-ring); }
+.svc__row:focus-visible { outline:none; box-shadow:var(--focus-ring); }
 .na-item__title { font:var(--weight-semibold) var(--text-sm)/var(--lh-sm) var(--font-sans); color:var(--color-text-primary); }
 .na-item__evidence { margin-top:3px; font:var(--text-2xs) var(--font-mono); color:var(--color-text-secondary); }
 .na-item__evidence code { font-family:var(--font-mono); color:var(--color-accent); }
