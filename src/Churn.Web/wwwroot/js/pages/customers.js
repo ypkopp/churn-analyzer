@@ -343,7 +343,26 @@
       return;
     }
     customerDrawer.setContent(customerHtml(res.data, res.meta.snapshot));
+    renderNextActions(res.data);
+    loadCustomerTasks(id);
     const fb = customerDrawer.el.querySelector("[data-autofocus]"); fb && fb.focus({ preventScroll: true });
+  }
+
+  /* «Что проверить дальше» — deterministic suggestions from the CURRENT batch
+     only (reasons/services/money of one evaluationId). Never a probability or
+     auto-action; a task is still created by a human via the existing form. */
+  function renderNextActions(data){
+    const el = document.querySelector(`#next-actions-${data.account.id} .next-actions`);
+    if(!el) return;
+    const list = (window.NextActions?.build(data)) || [];
+    el.innerHTML = list.length
+      ? `<ul class="na-list" role="list">${list.map(n=>`
+          <li class="na-item" data-service="${n.serviceId ?? ""}">
+            <div class="na-item__title">${esc(n.title)}</div>
+            <div class="na-item__evidence"><code>${esc(n.code)}</code>${n.serviceId?` · услуга ${n.serviceId}`:""} · ${esc(n.evidence)}</div>
+          </li>`).join("")}</ul>
+        <p class="sec__note">Рекомендации детерминированы по текущему батчу и не гарантируют результат.</p>`
+      : `<p class="sec__note" style="margin:0">Автоматической рекомендации нет.</p>`;
   }
 
   function customerHtml({ account: a, assessment: as, services }, snap) {
@@ -415,6 +434,10 @@
         <p class="sec__note">Одно ближайшее продление на услугу; просроченные события помечены. Это эвристический сценарный индекс (${esc(money.semantic||"heuristic_money_index")}), а не прогноз и не ожидаемая потеря.</p>
       </section>
       ${!isNone?warnings:""}
+      <section class="sec" id="next-actions-${a.id}" aria-labelledby="na-title-${a.id}">
+        <h3 class="sec__title" id="na-title-${a.id}">Что проверить дальше</h3>
+        <div class="next-actions"></div>
+      </section>
     </div>
     <div class="c-drawer__foot">
       ${UI.Button({ label:"Создать задачу на удержание", variant:"primary", attrs:{ "data-action":"task-new", "data-id": a.id } })}

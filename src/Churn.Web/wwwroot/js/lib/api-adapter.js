@@ -163,7 +163,7 @@
     async setTaskStatus(id,status,note){ const r=await req("POST",`/api/v1/tasks/${id}/status`,{status,note});return r.ok?ok(r.data):r; },
     async taskEvents(id){ const r=await req("GET",`/api/v1/tasks/${id}/events`);return r.ok?ok(r.data):r; },
     async customerTasks(id){ const r=await req("GET",`/api/v1/customers/${id}/tasks`);return r.ok?ok(r.data):r; },
-    async activeUsers(){ const r=await req("GET","/api/v1/admin/users");return r.ok?ok(r.data):r; },
+    async activeUsers(){ const r=await req("GET","/api/v1/users/assignable");return r.ok?ok(r.data):r; },
     /* messages */
     async listMessages(accountId){ const r=await req("GET","/api/v1/messages?accountId="+accountId);return r.ok?ok(r.data):r; },
     async createMessage(b){ const r=await req("POST","/api/v1/messages",b);return r.ok?ok(r.data):r; },

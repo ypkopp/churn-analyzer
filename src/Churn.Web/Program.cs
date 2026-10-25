@@ -285,6 +285,17 @@ app.MapPost("/api/v1/auth/rotate-password", async (HttpContext http, AppDb db,
 }).RequireAuthorization();
 
 // --- admin: employee management (Admin role only) ---------------------------
+// Full user list stays Admin-only. The task form only needs active ids+login
+// of assignable employees — a narrower projection, without roles, stamps,
+// password hashes or any other fields.
+app.MapGet("/api/v1/users/assignable", async (AppDb db) =>
+{
+    var users = await db.Users.AsNoTracking()
+        .Where(u => !u.Disabled).OrderBy(u => u.Login)
+        .Select(u => new { u.Id, u.Login }).ToListAsync();
+    return Results.Ok(users);
+}).RequireAuthorization("AnalystOrAdmin");
+
 app.MapGet("/api/v1/admin/users", async (AppDb db) =>
 {
     var users = await db.Users.AsNoTracking().OrderBy(u => u.Login)
