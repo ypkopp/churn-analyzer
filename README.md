@@ -193,7 +193,10 @@ docker compose up -d --build
 ## Проверено на стенде
 
 - `dotnet build` — 0 предупреждений; `tests/Churn.Core.Tests` — 69/69
-  (baseline 65/105→62, renewal 500→310 EURc, regression на переполнение raw).
+  (baseline 65/105→62, renewal 500→310 EURc, regression на переполнение raw);
+  `tests/Churn.IntegrationTests` — **49/49** на реальной PostgreSQL 17
+  (Testcontainers) на VPS: валидация входа 400, CSRF, auth, optimistic
+  concurrency, what-if scenario_not_applied, отзыв сессий.
 - Живой HTTPS: login→customers→detail→PATCH→новый `evaluationId`.
 - `/metrics`, `/api/v1/docs`, `v1.json` — `401` анониму, `200` за auth.
 - PATCH без CSRF → `403`; с `X-CSRF-TOKEN` → `200`.
@@ -213,8 +216,7 @@ docker compose up -d --build
   пользователя ранее выданная cookie отклоняется на следующем запросе. Отзыв
   происходит при обращении к защищённому ресурсу, а не по push-таймеру.
 - Интеграционные тесты (`tests/Churn.IntegrationTests`, Testcontainers + PG 17)
-  требуют Docker. В этой среде (рабочий Windows-хост без Docker) они не
-  запускались — на стенде их прогоняют в CI/VPS.
+  требуют Docker — прогнаны на VPS: **49/49**.
 - OIDC — не реализован (отложен как опциональный бонус по ТЗ).
 - Prometheus+Grafana — опциональный профиль `compose.observability.yaml`
   (loopback listeners, scrape-token); по умолчанию не поднимается.
