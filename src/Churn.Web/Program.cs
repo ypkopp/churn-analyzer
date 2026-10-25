@@ -891,12 +891,9 @@ app.MapGet("/api/v1/analytics/compare", async (AppDb db, Guid a, Guid b) =>
 app.MapPost("/api/v1/analytics/whatif", async (AppDb db,
     TimeProvider clock, HttpContext http) =>
 {
-    var snapRow = await db.Snapshots.OrderByDescending(s => s.SnapshotVersion).FirstOrDefaultAsync();
-    if (snapRow is null) return Results.Ok(new { state = "no_data" });
-    var settingsRow = await db.ModelSettings.OrderByDescending(m => m.ModelVersion).FirstOrDefaultAsync();
-    var baseSettings = Churn.Web.Services.EvaluationService.ToCoreSettings(settingsRow) ?? Churn.Core.ModelSettings.Baseline();
-    // Read the body explicitly — a record-parameter bind that silently yields a
-    // default would mask bad settings as the baseline scenario (200, not 400).
+    // Read + validate the body FIRST — a bad payload must return 400 even when
+    // the store has no snapshot yet; the "no_data" early-return must not let an
+    // invalid settings object skip validation.
     ModelSettingsDto? provided = null;
     JsonDocument? body = null;
     try { body = await JsonDocument.ParseAsync(http.Request.Body); }
@@ -914,6 +911,11 @@ app.MapPost("/api/v1/analytics/whatif", async (AppDb db,
         if (invalid is not null)
             return Results.BadRequest(Err("invalid_settings", invalid));
     }
+
+    var snapRow = await db.Snapshots.OrderByDescending(s => s.SnapshotVersion).FirstOrDefaultAsync();
+    if (snapRow is null) return Results.Ok(new { state = "no_data" });
+    var settingsRow = await db.ModelSettings.OrderByDescending(m => m.ModelVersion).FirstOrDefaultAsync();
+    var baseSettings = Churn.Web.Services.EvaluationService.ToCoreSettings(settingsRow) ?? Churn.Core.ModelSettings.Baseline();
     var scenario = provided is not null
         ? Churn.Web.Services.EvaluationService.ToCoreSettings(provided) : baseSettings;
     var snap = JsonSerializer.Deserialize<SourceSnapshotDto>(snapRow.Payload, Jopts)!;
