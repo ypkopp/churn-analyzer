@@ -40,6 +40,7 @@ builder.Services.AddSingleton<IPasswordHasher<AppUser>, PasswordHasher<AppUser>>
 builder.Services.AddSingleton<Churn.Web.Services.EvaluationService>();
 builder.Services.AddSingleton<Churn.Web.Services.LlmService>();
 builder.Services.AddHttpClient();
+builder.Services.AddMemoryCache(o => o.SizeLimit = 256);   // bounded AI-brief cache
 builder.Services.AddHostedService<Churn.Web.Services.RefreshService>();
 
 // Data Protection keys persisted outside the container so a normal restart
@@ -481,7 +482,6 @@ app.MapGet("/api/v1/analytics/summary", async (AppDb db) =>
 // Manual explicit call only; cached per evaluationId so polling never fires.
 // When the key/endpoint is missing or not allowed the feature reports as
 // unavailable — the rest of analytics keeps working.
-var aiCache = new System.Collections.Concurrent.ConcurrentDictionary<Guid, (string brief, string model)>();
 app.MapPost("/api/v1/ai/brief", async (AppDb db, Churn.Web.Services.LlmService llm,
     ClaimsPrincipal p, CancellationToken ct) =>
 {
@@ -489,9 +489,6 @@ app.MapPost("/api/v1/ai/brief", async (AppDb db, Churn.Web.Services.LlmService l
         return Results.Json(Err("ai_not_configured", "AI brief is disabled on this stand"), statusCode: 404);
     var run = await db.EvalRuns.OrderByDescending(r => r.CreatedAt).FirstOrDefaultAsync(ct);
     if (run is null) return Results.NotFound(Err("no_data", "no evaluation batch"));
-
-    if (aiCache.TryGetValue(run.EvaluationId, out var hit))
-        return Results.Ok(new { brief = hit.brief, model = hit.model, run.EvaluationId, run.AsOf, cached = true });
 
     // de-identified aggregate: counts, money totals (EUR cents), renewal buckets
     // and reason codes — no emails, no service names, no raw snapshot.
@@ -527,7 +524,6 @@ app.MapPost("/api/v1/ai/brief", async (AppDb db, Churn.Web.Services.LlmService l
 
     var res = await llm.BriefAsync(aggregate, run.EvaluationId.ToString(), ct);
     if (!res.Ok) return Results.Json(Err("ai_unavailable", res.Reason), statusCode: 502);
-    aiCache[run.EvaluationId] = (res.Brief!, res.Model ?? "");
     return Results.Ok(new { brief = res.Brief, model = res.Model, run.EvaluationId, run.AsOf, cached = false });
 }).RequireAuthorization("AnalystOrAdmin").RequireRateLimiting("analytics");
 
