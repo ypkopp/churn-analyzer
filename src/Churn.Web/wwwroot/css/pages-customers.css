@@ -370,6 +370,15 @@
   .table-foot .kbd-hint { display: none; }
 }
 
+/* tasks block sits under the drawer footer — match the body side-padding so
+   rows are not glued to the left edge. */
+.c-drawer__sec { padding: 0 var(--space-6) var(--space-6); }
+@media (max-width: 760px) { .c-drawer__sec { padding-left: var(--space-4); padding-right: var(--space-4); } }
+
+/* modal footer lives inside .modal-form (setContent takes one root) — give it
+   the same right-aligned look as .c-modal__foot without a second root node. */
+.modal-foot { display:flex; justify-content:flex-end; gap:var(--space-3); padding-top:var(--space-4); margin-top:var(--space-2); border-top:var(--border-subtle); }
+
 /* Кнопка сохранения: фиксированная ширина — смена текста pending/success/error не сдвигает футер */
 .set__save { min-width: calc(var(--space-12) * 3 + var(--space-3)); }
 
