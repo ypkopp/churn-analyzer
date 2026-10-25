@@ -801,11 +801,15 @@
     if (!main) return;
     if (!_savedTable) _savedTable = main.innerHTML;   // keep the list — restore on back
     main.innerHTML = `<div id="tasks-view"><div class="toolbar">${UI.Skeleton("40%")}</div></div>`;
+    // scroll to the panel so the swap is visible — the table region sits below
+    // the KPI blocks and otherwise opens out of view.
+    main.scrollIntoView({ behavior: "smooth", block: "start" });
     loadTasksInto(main);
   }
   function closeTasksView(){
     const main = $("#table-region");
-    if (main && _savedTable !== null) { main.innerHTML = _savedTable; _savedTable = null; }
+    if (main && _savedTable !== null) { main.innerHTML = _savedTable; _savedTable = null;
+      main.scrollIntoView({ behavior: "smooth", block: "start" }); }
   }
   async function loadTasksInto(main){
     const r = await api.listTasks({});
