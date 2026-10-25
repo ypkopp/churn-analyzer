@@ -12,6 +12,11 @@ public static class InputValidator
     // Known model keys — anything else is rejected, not silently ignored.
     private static readonly HashSet<string> WeightKeys = new(StringComparer.Ordinal)
         { "expiring_no_autoprolong", "insufficient_funds", "prolong_wait", "suspended" };
+    private static readonly Dictionary<string, int> BaselineWeights = new(StringComparer.Ordinal)
+    {
+        ["expiring_no_autoprolong"] = 30, ["insufficient_funds"] = 25,
+        ["prolong_wait"] = 40, ["suspended"] = 10
+    };
     private static readonly HashSet<string> ThresholdKeys = new(StringComparer.Ordinal)
         { "high", "medium" };
     private static readonly HashSet<string> PaymentTerms = new(StringComparer.Ordinal)
@@ -42,9 +47,17 @@ public static class InputValidator
 
         foreach (var (k, v) in dto.Weights)
             if (v < 0) return $"weight '{k}' is negative";
-        // total must be positive and not overflow when used as a denominator
+        // Effective sum = supplied weights plus baseline defaults for the keys
+        // NOT supplied — this is what ToCoreSettings will actually use as the
+        // normalization denominator. Validating only the supplied sum lets an
+        // int.MaxValue on one key silently overflow the effective denominator.
         long total = 0;
-        foreach (var v in dto.Weights.Values) { total += v; if (total > int.MaxValue) return "weights sum overflow"; }
+        foreach (var (k, def) in BaselineWeights)
+        {
+            var v = dto.Weights.TryGetValue(k, out var sup) ? sup : def;
+            total += v;
+            if (total > int.MaxValue) return "effective weights sum overflow";
+        }
         if (total == 0) return "weights sum is zero — an empty model is invalid_settings";
 
         // thresholds: 0..100 and medium must be strictly below high

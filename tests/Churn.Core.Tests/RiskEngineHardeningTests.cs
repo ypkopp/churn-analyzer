@@ -125,4 +125,21 @@ public class RiskEngineHardeningTests
         var r = RiskEngine.Evaluate(Acc(), many, Ctx(), ModelSettings.Baseline());
         Assert.Equal(100, r.Score); // 6*40=240 > maxRaw 115 -> clamps to 100
     }
+
+    // raw accumulates as long: two large valid weights must not wrap the int
+    // accumulator negative — the score stays clamped at 100, not a negative
+    // score out of overflow. Baseline semantics are unchanged.
+    [Fact]
+    public void Large_valid_weights_do_not_overflow_raw()
+    {
+        var svcs = new[]
+        {
+            Svc(1, 1, ServiceStatus.ProlongWait, 1),
+            Svc(2, 1, ServiceStatus.ProlongWait, 1),
+        };
+        var m = ModelSettings.Baseline() with { WeightProlongWait = int.MaxValue };
+        var r = RiskEngine.Evaluate(Acc(), svcs, Ctx(), m);
+        Assert.Equal(100, r.Score);           // clamped, not wrapped negative
+        Assert.True(r.Score >= 0);
+    }
 }

@@ -59,7 +59,10 @@ public static class RiskEngine
         bool anyUncovered = BalanceFund.UncoveredAfterSpending(due, account) > 0;
 
         // --- per-service feature accumulation ----------------------------------
-        int raw = 0;
+        // raw is long: several services each contributing a large weight would
+        // overflow int. The normalization clamps to [0,100] regardless, but the
+        // accumulation itself must not wrap negative.
+        long raw = 0;
         var seen = new HashSet<string>();
         void Add(string code, string detail, int weight)
         {
@@ -90,8 +93,8 @@ public static class RiskEngine
                 model.WeightInsufficientFunds);
 
         // --- normalize + level --------------------------------------------------
-        int maxRaw = Math.Max(1, model.MaxRaw);
-        int score = (int)Math.Clamp(Math.Round(100.0 * raw / maxRaw), 0, 100);
+        long maxRaw = Math.Max(1L, model.MaxRaw);
+        int score = (int)Math.Clamp((long)Math.Round(100.0 * raw / maxRaw), 0, 100);
 
         var level = score >= model.HighThreshold ? RiskLevel.High
                   : score >= model.MediumThreshold ? RiskLevel.Medium
