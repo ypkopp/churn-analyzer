@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -102,6 +103,15 @@ builder.Services.AddRateLimiter(o =>
     {
         opt.PermitLimit = loginPermit; opt.Window = TimeSpan.FromMinutes(1); opt.QueueLimit = 0;
     });
+    // analytics/whatif — a separate, gentler limiter keyed by the caller's
+    // login, so a what-if burst never consumes the login budget.
+    o.AddPolicy("analytics", ctx =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            ctx.User?.Identity?.Name ?? ctx.Connection.RemoteIpAddress?.ToString() ?? "anon",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 12, Window = TimeSpan.FromMinutes(1), QueueLimit = 0
+            }));
     o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 });
 
@@ -508,7 +518,7 @@ app.MapPost("/api/v1/ai/brief", async (AppDb db, Churn.Web.Services.LlmService l
     if (!res.Ok) return Results.Json(Err("ai_unavailable", res.Reason), statusCode: 502);
     aiCache[run.EvaluationId] = (res.Brief!, res.Model ?? "");
     return Results.Ok(new { brief = res.Brief, model = res.Model, run.EvaluationId, run.AsOf, cached = false });
-}).RequireAuthorization("AnalystOrAdmin").RequireRateLimiting("login");
+}).RequireAuthorization("AnalystOrAdmin").RequireRateLimiting("analytics");
 
 // --- snapshot: atomic replace + version, then re-evaluate -------------------
 // Only Admin may replace the source snapshot.
@@ -846,7 +856,16 @@ app.MapPost("/api/v1/analytics/whatif", async (AppDb db,
     if (snapRow is null) return Results.Ok(new { state = "no_data" });
     var settingsRow = await db.ModelSettings.OrderByDescending(m => m.ModelVersion).FirstOrDefaultAsync();
     var baseSettings = Churn.Web.Services.EvaluationService.ToCoreSettings(settingsRow) ?? Churn.Core.ModelSettings.Baseline();
-    var scenario = req?.Settings is not null ? Churn.Web.Services.EvaluationService.ToCoreSettings(req.Settings) : baseSettings;
+    // same non-writing validator as PATCH — explicit invalid fields -> 400,
+    // missing settings -> documented baseline-only scenario.
+    if (req?.Settings is not null)
+    {
+        var invalid = InputValidator.ModelSettings(req.Settings);
+        if (invalid is not null)
+            return Results.BadRequest(Err("invalid_settings", invalid));
+    }
+    var scenario = req?.Settings is not null
+        ? Churn.Web.Services.EvaluationService.ToCoreSettings(req.Settings) : baseSettings;
     var snap = JsonSerializer.Deserialize<SourceSnapshotDto>(snapRow.Payload, Jopts)!;
     var asOf = clock.GetUtcNow();   // shared by baseline AND scenario — no time skew
     var ctxB = new Churn.Core.EvaluationContext(asOf, baseSettings.HorizonDays,
@@ -897,7 +916,7 @@ app.MapPost("/api/v1/analytics/whatif", async (AppDb db,
         changed, baseModelVersion = baseSettings.ModelVersion,
         snapshotVersion = snapRow.SnapshotVersion,
     });
-}).RequireAuthorization("AnalystOrAdmin").RequireRateLimiting("login");
+}).RequireAuthorization("AnalystOrAdmin").RequireRateLimiting("analytics");
 
 // --- /metrics: Prometheus exposition from the latest PUBLISHED batch --------
 // Values all come from ONE eval run — no recalculation on scrape.

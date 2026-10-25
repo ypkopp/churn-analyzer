@@ -118,6 +118,41 @@ active/suspended/prolong_wait всё равно считается due, если
 - Нет начисления несуществующих исторических долгов — только будущие события
   в горизонте от явного `asOf`.
 
+## Входная валидация (P01)
+
+Один непишущий валидатор (`InputValidator`) применяется к `PATCH
+/api/v1/model/settings`, `POST /api/v1/analytics/whatif` и `PUT
+/api/v1/source/snapshot`. Некорректный payload отклоняется целиком `400
+invalid_settings|invalid_snapshot` и никогда не записывает источник,
+настройки или последний опубликованный батч.
+
+**Модель:**
+- `settings`, `weights`, `thresholds` обязательны (null → `settings required`/`weights required`/`thresholds required`);
+- неизвестные ключи весов/порогов отклоняются (не игнорируются);
+- `horizonDays` ∈ [1..3660];
+- каждый вес ≥ 0; сумма весов > 0 и не переполняет `int`; **all-zero weights → `invalid_settings` (пустая модель недопустима)**;
+- каждый порог ∈ [0..100]; `medium < high` строго.
+- Отсутствующие ключи (не заданные в `weights`/`thresholds`) сохраняют baseline-значения — это допустимая семантика контракта.
+
+**Снимок:**
+- `accounts`, `services`, `transactions` обязательны (null-коллекция и null-элемент отклоняются);
+- дубли всех id (account, service, transaction) отклоняются;
+- orphan-ссылки `service.ownerId` и `transaction.serviceId` отклоняются;
+- неизвестные enum (`bonusState`, `service.status`, `paymentTerm`, `tx.status`, `tx.type`) отклоняются;
+- отрицательные деньги (balance/withdraw/total/bonus, price, amount) отклоняются;
+- `performed` без `performedAt` и `not_performed` с `performedAt` отклоняются;
+- `expiresAt < createdAt` отклоняется.
+
+**What-if:**
+- `settings` может отсутствовать — это документированный baseline-only сценарий;
+- явные некорректные поля → `400 invalid_settings`, результат не пишется.
+
+**Rate-limit:**
+- `login` — отдельный лимитер (по username/IP), не ослаблен;
+- `analytics` (what-if, ai/brief) — отдельный лимитер 12/мин, ключ по логину
+  авторизованного пользователя (IP при анониме); `429` на аналитику не
+  блокирует login.
+
 ### Горизонт и календарь
 Горизонт `horizonDays` + явный `asOf`. Оплачиваемое событие — одно ближайшее
 материализованное продление: попадание уже записанного `expiresAt` в окно

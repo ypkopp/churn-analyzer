@@ -44,22 +44,10 @@ public sealed class SnapshotStore(AppDb db, TimeProvider clock)
         return (true, row.SnapshotVersion, null);
     }
 
-    /// <summary>Referential + format validation. Rejects the whole snapshot.</summary>
-    private static string? Validate(SourceSnapshotDto s)
-    {
-        var accIds = s.Accounts.Select(a => a.Id).ToHashSet();
-        if (accIds.Count != s.Accounts.Count) return "duplicate account ids";
-        var svcIds = s.Services.Select(v => v.Id).ToHashSet();
-        if (svcIds.Count != s.Services.Count) return "duplicate service ids";
-        if (s.Services.Any(v => !accIds.Contains(v.OwnerId))) return "service ownerId missing";
-        if (s.Transactions.Any(t => !svcIds.Contains(t.ServiceId))) return "transaction serviceId missing";
-        if (s.Transactions.Any(t => t.Status == "not_performed" && t.PerformedAt is not null))
-            return "not_performed tx has performedAt";
-        if (s.Transactions.Any(t => t.Status == "performed" && t.PerformedAt is null))
-            return "performed tx missing performedAt";
-        if (s.Services.Any(v => v.ExpiresAt < v.CreatedAt)) return "expiresAt < createdAt";
-        return null;
-    }
+    /// <summary>Referential + format validation. Rejects the whole snapshot —
+    /// delegates to the shared non-writing validator so PATCH/PUT/whatif all
+    /// enforce the same contract.</summary>
+    private static string? Validate(SourceSnapshotDto s) => InputValidator.Snapshot(s);
 
     public async Task<ModelSettingsRow?> CurrentSettingsAsync(CancellationToken ct = default) =>
         await db.ModelSettings.OrderByDescending(m => m.ModelVersion).FirstOrDefaultAsync(ct);
@@ -68,8 +56,8 @@ public sealed class SnapshotStore(AppDb db, TimeProvider clock)
     public async Task<(bool ok, ModelSettingsRow? row, string? error)> SaveSettingsAsync(
         ModelSettingsDto dto, CancellationToken ct = default)
     {
-        if (dto.HorizonDays < 1 || dto.HorizonDays > 3660) return (false, null, "horizonDays out of range");
-        if (dto.Weights.Any(w => w.Value < 0)) return (false, null, "negative weight");
+        var invalid = InputValidator.ModelSettings(dto);
+        if (invalid is not null) return (false, null, invalid);
         var prev = await CurrentSettingsAsync(ct);
         var row = new ModelSettingsRow
         {
