@@ -40,8 +40,11 @@ ASP.NET Core 10 · Razor Pages + JSON API · PostgreSQL · Cookie-auth + CSRF ·
 ## Возможности (проверено на стенде)
 
 - Cookie-auth с HttpOnly + SameSite=Strict; CSRF-токен `X-CSRF-TOKEN` для
-  всех изменяющих запросов; rate-limit на login; серверный отзыв сессий по
-  security stamp (смена пароля и отключение делают старую cookie непригодной).
+  всех изменяющих запросов; **общий** fixed-window rate-limit на login
+  (`RateLimit:LoginPermit`, default 5/мин, без ключа по пользователю/IP — лимит
+  делят все попытки входа, `429` возвращается когда бюджет исчерпан);
+  серверный отзыв сессий по security stamp (смена пароля и отключение делают
+  старую cookie непригодной на следующем запросе).
 - Роли: `admin` (управление пользователями + замена снимка) и `analyst`
   (аналитика и настройки модели); проверки на сервере, не только скрытие кнопок.
 - Таблица клиентов: поиск по ID/email, фильтр по уровню риска со счётчиками,
@@ -59,8 +62,9 @@ ASP.NET Core 10 · Razor Pages + JSON API · PostgreSQL · Cookie-auth + CSRF ·
   явно недоступна (`503 transport_unavailable`) без SMTP/API настроек.
 - Сохранённые сегменты: пользовательские пресеты фильтра (q/level/sort/dir)
   в БД, вычисляются на текущем батче — не устаревшая копия клиентов.
-- Экспорт CSV: авторизованный, текущий фильтр/сортировка, все соответствующие
-  строки, единицы EUR cents, `no_assessment`, защита от formula injection.
+- Экспорт CSV: на клиенте из текущего представления таблицы (фильтр/сортировка),
+  единицы EUR cents, `no_assessment`, защита от formula injection. Загрузка
+  снимка — через UI «Источник данных» (admin) → `PUT /api/v1/source/snapshot`.
 - AI-резюме (опционально): `POST /api/v1/ai/brief` — обезличенная сводка
   батча, ручной запуск, кэш по `evaluationId`, маркировка модели/asOf; без
   ключа — `ai_not_configured`, основная аналитика работает.
@@ -144,6 +148,18 @@ docker compose up -d --build
   включает `Secure`-флаг cookie, а `UseForwardedHeaders` доверяет только
   заголовкам от прокси внутри сети compose.
 
+### Переменные окружения (`.env.example`, без значений)
+
+| Ключ | Назначение |
+|---|---|
+| `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | доступ к БД внутри сети compose |
+| `ADMIN_LOGIN` / `ADMIN_PASSWORD` | первичный admin (создаётся один раз) |
+| `BOOTSTRAP_SEED_FILE` | путь в контейнере к снимку-фикстуре (опционально) |
+| `HTTPS_ENABLED` | `Secure`-флаг auth-cookie за прокси |
+| `EVAL_REFRESH_SECONDS` | интервал фонового пересчёта батча |
+| `AI_API_KEY` / `AI_ENDPOINT` / `AI_MODEL` | опциональный AI-brief (без ключа — `ai_not_configured`) |
+| `AI_ALLOWED_HOSTS` / `AI_TIMEOUT_SECONDS` / `AI_MAX_RESPONSE_BYTES` | границы AI-вызова |
+
 ## API
 
 | Endpoint | Назначение |
@@ -171,7 +187,8 @@ docker compose up -d --build
 
 ## Проверено на стенде
 
-- `dotnet build` — 0 предупреждений; `tests/Churn.Core.Tests` — 68/68.
+- `dotnet build` — 0 предупреждений; `tests/Churn.Core.Tests` — 69/69
+  (baseline 65/105→62, renewal 500→310 EURc, regression на переполнение raw).
 - Живой HTTPS: login→customers→detail→PATCH→новый `evaluationId`.
 - `/metrics`, `/api/v1/docs`, `v1.json` — `401` анониму, `200` за auth.
 - PATCH без CSRF → `403`; с `X-CSRF-TOKEN` → `200`.
@@ -187,8 +204,12 @@ docker compose up -d --build
 
 - Score — индекс, не вероятность; истории смены статусов в данных нет,
   поэтому accuracy/AUC не заявляются.
-- Сессии, выданные до смены пароля, остаются валидными (cookie sliding, без
-  списка отзыва).
-- Интеграционные тесты требуют Docker+Testcontainers; в этом окружении
-  (локальный Docker) они не запускались.
-- Нет Grafana и OIDC; экспорт CSV и загрузка снимка из UI — не реализованы.
+- Отзыв сессий — через security stamp: после смены пароля или отключения
+  пользователя ранее выданная cookie отклоняется на следующем запросе. Отзыв
+  происходит при обращении к защищённому ресурсу, а не по push-таймеру.
+- Интеграционные тесты (`tests/Churn.IntegrationTests`, Testcontainers + PG 17)
+  требуют Docker. В этой среде (рабочий Windows-хост без Docker) они не
+  запускались — на стенде их прогоняют в CI/VPS.
+- OIDC — не реализован (отложен как опциональный бонус по ТЗ).
+- Prometheus+Grafana — опциональный профиль `compose.observability.yaml`
+  (loopback listeners, scrape-token); по умолчанию не поднимается.

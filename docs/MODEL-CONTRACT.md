@@ -148,7 +148,9 @@ invalid_settings|invalid_snapshot` и никогда не записывает �
 - явные некорректные поля → `400 invalid_settings`, результат не пишется.
 
 **Rate-limit:**
-- `login` — отдельный лимитер (по username/IP), не ослаблен;
+- `login` — **общий** fixed-window лимитер (`RateLimit:LoginPermit`, default
+  5/мин, `QueueLimit=0`), НЕ ключованный по username/IP: бюджет делят все
+  попытки входа в минуту; `429` на login не трогает аналитику;
 - `analytics` (what-if, ai/brief) — отдельный лимитер 12/мин, ключ по логину
   авторизованного пользователя (IP при анониме); `429` на аналитику не
   блокирует login.
