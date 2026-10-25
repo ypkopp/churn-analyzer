@@ -1,8 +1,8 @@
-# Optional observability profile — prometheus + grafana alongside the app.
-# Runs on the same compose network, loopback-only ports, fixed image versions.
-# Enable with: docker compose -f compose.yaml -f compose.observability.yaml --profile observability up -d
-name: churn-analyzer-observability
-
+# Optional observability profile — prometheus + grafana alongside the app,
+# SAME compose project/network as the main stack. Enable with:
+#   docker compose -f compose.yaml -f compose.override.yaml \
+#     -f compose.observability.yaml --profile observability up -d
+# Loopback-only listeners, bounded retention, dedicated scrape token.
 services:
   prometheus:
     image: prom/prometheus:v2.55.1
@@ -10,17 +10,17 @@ services:
     profiles: ["observability"]
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.retention.time=15d'      # bounded retention on a small VPS
+      - '--storage.tsdb.retention.time=15d'
       - '--storage.tsdb.retention.size=1GB'
-      - '--web.listen-address=127.0.0.1:9090'
+      - '--web.listen-address=0.0.0.0:9090'
     volumes:
       - prometheus_data:/prometheus
       - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-    # no published ports — scrape happens over the internal network only.
+      - ./observability/scrape_token:/etc/prometheus/scrape_token:ro
+    ports:
+      - "127.0.0.1:9090:9090"      # loopback only
     depends_on:
       - app
-    networks:
-      - default
 
   grafana:
     image: grafana/grafana:11.4.0
@@ -31,28 +31,15 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_AUTH_DISABLE_LOGIN_FORM: "false"
-      GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s:%(http_port)s/"
       GF_SERVER_HTTP_ADDR: 127.0.0.1
     volumes:
       - grafana_data:/var/lib/grafana
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
     ports:
-      - "127.0.0.1:3000:3000"      # loopback only — reach via SSH tunnel or an explicit proxy
+      - "127.0.0.1:3000:3000"
     depends_on:
       - prometheus
-    networks:
-      - default
-
-  # Re-declare the app so this file can reference it for the dependency edge.
-  # No ports/env changes — it stays loopback/internal via compose.override.
-  app:
-    profiles: ["observability"]
 
 volumes:
   prometheus_data:
   grafana_data:
-
-networks:
-  default:
-    name: churn-analyzer_default
-    external: true
