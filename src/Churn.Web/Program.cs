@@ -823,11 +823,18 @@ app.MapGet("/api/v1/analytics/compare", async (AppDb db, Guid a, Guid b) =>
         return new
         {
             accountId = id,
+            // 'changed' only when something actually differs; a null delta is
+            // not a delta, it is "no assessment on at least one side".
             state = levelChanged || assessChanged || scoreDelta != 0 || reasonChanged ? "changed" : "same",
             transition,
             from = Rank(ca), to = Rank(cb), scoreDelta, levelChanged, assessChanged, reasonChanged
         };
     }).ToList();
+
+    var finalChanged = changes.Where(c => c.state == "changed" &&
+        (c.levelChanged || c.assessChanged || c.reasonChanged || c.scoreDelta is not null)).ToList();
+    var finalAppeared = changes.Where(c => c.state == "appeared").ToList();
+    var finalRemoved = changes.Where(c => c.state == "removed").ToList();
 
     return Results.Ok(new
     {
@@ -837,9 +844,9 @@ app.MapGet("/api/v1/analytics/compare", async (AppDb db, Guid a, Guid b) =>
         countsA = counts(mapA), countsB = counts(mapB),
         moneyA = sa is null ? null : JsonSerializer.Deserialize<SummaryDto>(sa.Payload, Jopts)?.Money,
         moneyB = sb is null ? null : JsonSerializer.Deserialize<SummaryDto>(sb.Payload, Jopts)?.Money,
-        changed = changes.Where(c => c.state == "changed").ToList(),
-        appeared = changes.Where(c => c.state == "appeared").ToList(),
-        removed = changes.Where(c => c.state == "removed").ToList(),
+        changed = finalChanged,
+        appeared = finalAppeared,
+        removed = finalRemoved,
         total = ids.Count
     });
     static object? Rank(CustomerResultDto? d) => d is null ? null : new
