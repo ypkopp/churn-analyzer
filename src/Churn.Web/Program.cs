@@ -918,7 +918,7 @@ app.MapPost("/api/v1/analytics/whatif", async (AppDb db,
     static string Lvl(Churn.Core.CustomerAssessment r) =>
         r.NoAssessment ? "no_assessment" : r.Level.ToString().ToLowerInvariant();
 
-    var changed = diffs.Where(d => d.levelChanged || d.assessChanged || d.scoreDelta != 0 || d.moneyDelta != 0 || d.reasonsChanged)
+    var changed = diffs.Where(d => d.levelChanged || d.assessChanged || d.scoreDelta is not null || d.moneyDelta is not null || d.reasonsChanged)
         .OrderByDescending(d => Math.Abs(d.scoreDelta ?? 0)).ThenByDescending(d => Math.Abs(d.moneyDelta ?? 0)).Take(20).ToList();
     var noEstimate = diffs.Count(d => d.scoreDelta is null);
     long rbR = 0, rbU = 0, rbA = 0, rsA = 0;
