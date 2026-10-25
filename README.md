@@ -40,15 +40,33 @@ ASP.NET Core 10 · Razor Pages + JSON API · PostgreSQL · Cookie-auth + CSRF ·
 ## Возможности (проверено на стенде)
 
 - Cookie-auth с HttpOnly + SameSite=Strict; CSRF-токен `X-CSRF-TOKEN` для
-  всех изменяющих запросов; rate-limit на login.
+  всех изменяющих запросов; rate-limit на login; серверный отзыв сессий по
+  security stamp (смена пароля и отключение делают старую cookie непригодной).
+- Роли: `admin` (управление пользователями + замена снимка) и `analyst`
+  (аналитика и настройки модели); проверки на сервере, не только скрытие кнопок.
 - Таблица клиентов: поиск по ID/email, фильтр по уровню риска со счётчиками,
   сортировка по ID/email/балансу/пополнениям/score в обе стороны,
   «без оценки» в конце при любом ключе.
 - Карточка клиента: причины риска, вклады факторов, услуги и сроки,
   денежный разбор, транзакции, индикатор лояльности (производный `100 − score`,
   не измеренное поведение).
-- Единая оценочная версия (`evaluationId` + `snapshotVersion` + `modelVersion`
-  + `asOf`) у списка, карточки и сводки — UI никогда не смешивает батчи.
+- Задачи на удержание: создание из карточки, список/поиск/статусы, журнал
+  изменений, привязка к `evaluationId`/`asOf` (контекст решения). Статусы:
+  new/in_progress/done/cancelled; не выдаёт завершённую задачу за доказанное
+  удержание.
+- Связь с клиентом: редактор темы/текста с шаблоном по причине риска, черновик,
+  копирование, mailto (метка «prepared»), отправка через серверный транспорт —
+  явно недоступна (`503 transport_unavailable`) без SMTP/API настроек.
+- Сохранённые сегменты: пользовательские пресеты фильтра (q/level/sort/dir)
+  в БД, вычисляются на текущем батче — не устаревшая копия клиентов.
+- Экспорт CSV: авторизованный, текущий фильтр/сортировка, все соответствующие
+  строки, единицы EUR cents, `no_assessment`, защита от formula injection.
+- AI-резюме (опционально): `POST /api/v1/ai/brief` — обезличенная сводка
+  батча, ручной запуск, кэш по `evaluationId`, маркировка модели/asOf; без
+  ключа — `ai_not_configured`, основная аналитика работает.
+- Аналитика продлений: `GET /api/v1/analytics/renewals` — ближайшие продления
+  по датам с уровнями риска и просрочкой, причины с числом клиентов, переход
+  к таблице; одна услуга — одно продление, даты не являются датами оттока.
 - `PUT /api/v1/source/snapshot` — атомарная замена снимка + пересчёт.
 - `PATCH /api/v1/model/settings` — коэффициенты/пороги с optimistic concurrency
   (`expectedVersion` → `409` при конфликте) и пересчётом. Настройки переживают
@@ -132,9 +150,16 @@ docker compose up -d --build
 |---|---|
 | `POST /api/v1/auth/login` / `logout` / `me` / `csrf` | сессия, CSRF-токен |
 | `POST /api/v1/auth/rotate-password` | смена пароля (current+new, auth+CSRF) |
+| `GET/POST/PATCH /api/v1/admin/users` `PATCH .../{id}/status` | сотрудники и активность (admin) |
 | `GET /api/v1/customers` | рейтинг + batch identity |
 | `GET /api/v1/customers/{id}` | карточка клиента |
+| `GET /api/v1/customers/{id}/tasks` | задачи клиента |
 | `GET /api/v1/analytics/summary` | сводка (та же оценочная версия) |
+| `GET /api/v1/analytics/renewals` | продления по датам + причины (batch) |
+| `GET/POST /api/v1/tasks` `PATCH/{id}` `POST {id}/status` `GET {id}/events` | задачи на удержание |
+| `GET/POST /api/v1/messages` `POST {id}/prepared` `POST {id}/send` | сообщения клиенту |
+| `GET/POST/PATCH/DELETE /api/v1/segments` | сохранённые сегменты пользователя |
+| `POST /api/v1/ai/brief` | AI-резюме батча (опционально) |
 | `GET/PATCH /api/v1/model/settings` | коэффициенты + optimistic concurrency |
 | `PUT /api/v1/source/snapshot` | атомарная замена снимка |
 | `GET /api/v1/ui-config` | интервал polling UI |
@@ -152,6 +177,10 @@ docker compose up -d --build
 - PATCH без CSRF → `403`; с `X-CSRF-TOKEN` → `200`.
 - Cookie: `Secure; HttpOnly; SameSite=Strict` при HTTPS.
 - `rotate-password` → `204`; старый пароль `401`, новый `204`.
+- Задачи: создать `201` с `evaluationId`, статус `200`, журнал событий; stale-клиент → `customerAvailable:false`.
+- Сообщение: черновик сохранён; `send` → `503 transport_unavailable` без SMTP.
+- Сегмент: `201`, принадлежит пользователю.
+- AI brief: при отключённом ключе `404 ai_not_configured`; с ключом — реальный ответ с `evaluationId`/`asOf`.
 - Прямой порт приложения недоступен извне — только loopback/сеть compose.
 
 ## Ограничения
