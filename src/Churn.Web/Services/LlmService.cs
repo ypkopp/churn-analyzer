@@ -17,7 +17,7 @@ namespace Churn.Web.Services;
 /// </summary>
 public sealed class LlmService(IConfiguration cfg, IMemoryCache cache)
 {
-    public record Result(bool Ok, string? Brief, string? Reason, string? Model, string? EvaluationId);
+    public record Result(bool Ok, string? Brief, string? Reason, string? Model, string? EvaluationId, bool Cached = false);
 
     // Host allowlist — a coarse gate, NOT a complete SSRF defence. DNS can
     // rebind between resolution and connect; redirects are forbidden below,
@@ -36,7 +36,8 @@ public sealed class LlmService(IConfiguration cfg, IMemoryCache cache)
     private string? Model => cfg["Ai:Model"] ?? Environment.GetEnvironmentVariable("Ai__Model") ?? "gpt-4o-mini";
     private int TimeoutSeconds => cfg.GetValue("Ai:TimeoutSeconds", 30);
     private int MaxResponseBytes => cfg.GetValue("Ai:MaxResponseBytes", 1 << 20);
-    private int CacheMaxEntries => cfg.GetValue("Ai:CacheMaxEntries", 64);
+    // CacheMaxEntries removed — bound is enforced by the shared MemoryCache
+    // SizeLimit (each entry SetSize(1)); a separate counter was dead config.
     private int CacheTtlSeconds => cfg.GetValue("Ai:CacheTtlSeconds", 600);
 
     /// <summary>Validate that the configured endpoint is safe to call:
@@ -73,7 +74,15 @@ public sealed class LlmService(IConfiguration cfg, IMemoryCache cache)
 
     // One in-flight upstream call per evaluationId — a second request for the
     // same batch shares the wait instead of starting a duplicate paid call.
+    // Entries are pruned only when nobody is waiting on them: a lock is removed
+    // after it is released AND its semaphore is uncontended, so a late remover
+    // can never split one key into two concurrent upstream calls.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, SemaphoreSlim> _locks = new();
+    // Bound the coordinator so a long-lived app cannot grow _locks without
+    // limit: once past this many idle entries we drop unlocked, uncontended
+    // semaphores. Waiters keep their instance, so a removal mid-wait is safe —
+    // the removed key just gets a fresh semaphore on the next GetOrAdd.
+    private const int MaxLocks = 256;
 
     /// <summary>Ask the configured model for a brief over the de-identified
     /// aggregate. Caller passes only aggregate fields — never raw rows.</summary>
@@ -85,28 +94,50 @@ public sealed class LlmService(IConfiguration cfg, IMemoryCache cache)
 
         var key = $"ai_brief:{evaluationId}";
         if (cache.TryGetValue(key, out string? hit) && hit is not null)
-            return new(true, hit, null, Model, evaluationId);
+            return new(true, hit, null, Model, evaluationId, Cached: true);
 
-        var gate = _locks.GetOrAdd(Guid.Parse(evaluationId), _ => new SemaphoreSlim(1, 1));
+        var guid = Guid.Parse(evaluationId);
+        var gate = _locks.GetOrAdd(guid, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(ct);
         try
         {
             if (cache.TryGetValue(key, out hit) && hit is not null)
-                return new(true, hit, null, Model, evaluationId);
+                return new(true, hit, null, Model, evaluationId, Cached: true);
             var res = await CallAsync(aggregate, evaluationId, ct);
             if (res.Ok && res.Brief is not null)
             {
-                var opts = new MemoryCacheEntryOptions()
-                    .SetAbsoluteExpiration(TimeSpan.FromSeconds(CacheTtlSeconds))
-                    .SetSize(1);
-                if (cache is MemoryCache mc) mc.Compact(0); // bounded by size options below
+                // bounded: every entry carries size 1 and the shared cache has a
+                // SizeLimit — an evicted/expired slot is simply recomputed, never
+                // a memory leak. CacheMaxEntries bounds via the cache size limit.
                 var entry = cache.CreateEntry(key);
-                entry.SetOptions(opts).Value = res.Brief;
+                entry.SetOptions(new MemoryCacheEntryOptions()
+                    .SetAbsoluteExpiration(TimeSpan.FromSeconds(CacheTtlSeconds))
+                    .SetSize(1)).Value = res.Brief;
                 entry.Dispose();
             }
             return res;
         }
-        finally { gate.Release(); }
+        finally
+        {
+            gate.Release();
+            // Safe prune: only drop a semaphore that is free AND uncontended.
+            // CurrentCount==1 && WaitHandle not needed — a waiter holds count<1
+            // or is queued, both visible via CurrentCount<1 before WaitAsync.
+            if (_locks.Count > MaxLocks)
+                PruneLocks();
+        }
+    }
+
+    private void PruneLocks()
+    {
+        foreach (var kv in _locks)
+        {
+            var sem = kv.Value;
+            // remove only when the gate is free — a held or contended semaphore
+            // keeps its instance so waiters never split into parallel calls.
+            if (sem.CurrentCount == 1)
+                _locks.TryRemove(new System.Collections.Generic.KeyValuePair<Guid, SemaphoreSlim>(kv.Key, sem));
+        }
     }
 
     private async Task<Result> CallAsync(object aggregate, string evaluationId, CancellationToken ct)
@@ -132,49 +163,62 @@ public sealed class LlmService(IConfiguration cfg, IMemoryCache cache)
         // allowlist is checked on the configured endpoint, not on a Location
         // header we cannot validate. Auto-redirects are therefore disabled.
         var handler = new HttpClientHandler { AllowAutoRedirect = false };
-        using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(TimeoutSeconds) };
+        using var client = new HttpClient(handler);   // no client.Timeout — the
+        // linked CTS below bounds DNS/connect/headers/body with one deadline.
         using var req = new HttpRequestMessage(HttpMethod.Post, Endpoint)
         { Content = new StringContent(payload, Encoding.UTF8, "application/json") };
         req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", ApiKey);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(TimeSpan.FromSeconds(TimeoutSeconds));
         try
         {
-            using var res = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+            using var res = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, deadline.Token);
             // redirect to any other location is treated as controlled unavailability
             if ((int)res.StatusCode >= 300 && (int)res.StatusCode < 400)
                 return new(false, null, "ai_redirect_not_allowed", Model, evaluationId);
 
-            // read the body as a byte stream up to MaxResponseBytes+1 — no
-            // whole-string allocation before the limit check.
+            // read the body as a byte stream up to MaxResponseBytes+1 — a
+            // stateful UTF-8 decoder, so a multi-byte char split across chunks
+            // is not torn. No whole-string allocation before the limit check.
             long total = 0;
             var sb = new StringBuilder();
+            var decoder = Encoding.UTF8.GetDecoder();
             var buffer = ArrayPool<byte>.Shared.Rent(16 * 1024);
             try
             {
-                await using var stream = await res.Content.ReadAsStreamAsync(ct);
+                await using var stream = await res.Content.ReadAsStreamAsync(deadline.Token);
                 int read;
-                while ((read = await stream.ReadAsync(buffer, 0, buffer.Length, ct)) > 0)
+                while ((read = await stream.ReadAsync(buffer, 0, buffer.Length, deadline.Token)) > 0)
                 {
                     total += read;
                     if (total > MaxResponseBytes)
                         return new(false, null, "ai_response_too_large", Model, evaluationId);
-                    sb.Append(Encoding.UTF8.GetString(buffer, 0, read));
+                    var chars = new char[decoder.GetCharCount(buffer, 0, read, false)];
+                    decoder.GetChars(buffer, 0, read, chars, 0, false);
+                    sb.Append(chars);
                 }
+                var tail = new char[decoder.GetCharCount(Array.Empty<byte>(), 0, 0, true)];
+                decoder.GetChars(Array.Empty<byte>(), 0, 0, tail, 0, true);
+                sb.Append(tail);
             }
             finally { ArrayPool<byte>.Shared.Return(buffer); }
 
             if (!res.IsSuccessStatusCode)
                 return new(false, null, $"ai_http_{(int)res.StatusCode}", Model, evaluationId);
             string body = sb.ToString();
-            JsonDocument doc;
+            JsonDocument? doc;
             try { doc = JsonDocument.Parse(body); }
             catch { return new(false, null, "ai_invalid_json", Model, evaluationId); }
-            string? text = null;
-            try { text = doc.RootElement.GetProperty("choices")[0]
-                    .GetProperty("message").GetProperty("content").GetString(); }
-            catch { return new(false, null, "ai_no_choices", Model, evaluationId); }
-            return string.IsNullOrWhiteSpace(text)
-                ? new(false, null, "ai_empty", Model, evaluationId)
-                : new(true, text, null, Model, evaluationId);
+            using (doc)
+            {
+                string? text = null;
+                try { text = doc.RootElement.GetProperty("choices")[0]
+                        .GetProperty("message").GetProperty("content").GetString(); }
+                catch { return new(false, null, "ai_no_choices", Model, evaluationId); }
+                return string.IsNullOrWhiteSpace(text)
+                    ? new(false, null, "ai_empty", Model, evaluationId)
+                    : new(true, text, null, Model, evaluationId);
+            }
         }
         catch (HttpRequestException) { return new(false, null, "ai_error", Model, evaluationId); }
         catch (OperationCanceledException) { return new(false, null, "ai_timeout", Model, evaluationId); }

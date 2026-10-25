@@ -524,7 +524,7 @@ app.MapPost("/api/v1/ai/brief", async (AppDb db, Churn.Web.Services.LlmService l
 
     var res = await llm.BriefAsync(aggregate, run.EvaluationId.ToString(), ct);
     if (!res.Ok) return Results.Json(Err("ai_unavailable", res.Reason), statusCode: 502);
-    return Results.Ok(new { brief = res.Brief, model = res.Model, run.EvaluationId, run.AsOf, cached = false });
+    return Results.Ok(new { brief = res.Brief, model = res.Model, run.EvaluationId, run.AsOf, cached = res.Cached });
 }).RequireAuthorization("AnalystOrAdmin").RequireRateLimiting("analytics");
 
 // --- snapshot: atomic replace + version, then re-evaluate -------------------
