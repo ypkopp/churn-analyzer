@@ -800,21 +800,31 @@ app.MapGet("/api/v1/analytics/compare", async (AppDb db, Guid a, Guid b) =>
     var changes = ids.Select(id =>
     {
         var ca = mapA.GetValueOrDefault(id); var cb = mapB.GetValueOrDefault(id);
+        // scoreDelta is a number ONLY when both sides have an assessment.
+        // no_assessment / appeared / removed carry an explicit transition, not
+        // a fabricated numeric delta (nothing to subtract from).
         if (ca is null)
-            return new { accountId = id, state = "appeared", from = (object?)null, to = Rank(cb),
-                scoreDelta = 0, levelChanged = false, assessChanged = false, reasonChanged = false };
+            return new { accountId = id, state = "appeared", transition = "appeared",
+                from = (object?)null, to = Rank(cb),
+                scoreDelta = (int?)null, levelChanged = false, assessChanged = false, reasonChanged = false };
         if (cb is null)
-            return new { accountId = id, state = "removed", from = Rank(ca), to = (object?)null,
-                scoreDelta = 0, levelChanged = false, assessChanged = false, reasonChanged = false };
-        var scoreDelta = (cb.Rank.RiskScore ?? -1) - (ca.Rank.RiskScore ?? -1);
-        var levelChanged = ca.Rank.RiskLevel != cb.Rank.RiskLevel;
+            return new { accountId = id, state = "removed", transition = "removed",
+                from = Rank(ca), to = (object?)null,
+                scoreDelta = (int?)null, levelChanged = false, assessChanged = false, reasonChanged = false };
+        var assessedBoth = !ca.Rank.NoAssessment && !cb.Rank.NoAssessment;
+        int? scoreDelta = assessedBoth ? (cb.Rank.RiskScore ?? 0) - (ca.Rank.RiskScore ?? 0) : (int?)null;
         var assessChanged = ca.Rank.NoAssessment != cb.Rank.NoAssessment;
+        var levelChanged = ca.Rank.RiskLevel != cb.Rank.RiskLevel;
         var reasonChanged = !new HashSet<string>(ca.Rank.Reasons ?? new List<string>())
             .SetEquals(cb.Rank.Reasons ?? new List<string>());
+        var transition = assessChanged
+            ? (ca.Rank.NoAssessment ? "no_assessment_to_assessed" : "assessed_to_no_assessment")
+            : (levelChanged ? "level_changed" : "same");
         return new
         {
             accountId = id,
             state = levelChanged || assessChanged || scoreDelta != 0 || reasonChanged ? "changed" : "same",
+            transition,
             from = Rank(ca), to = Rank(cb), scoreDelta, levelChanged, assessChanged, reasonChanged
         };
     }).ToList();
@@ -886,17 +896,24 @@ app.MapPost("/api/v1/analytics/whatif", async (AppDb db,
             a.Id, a.Email,
             baseScore = rb.NoAssessment ? (int?)null : rb.Score, baseLevel = Lvl(rb),
             scenScore = rs.NoAssessment ? (int?)null : rs.Score, scenLevel = Lvl(rs),
-            scoreDelta = (rs.NoAssessment ? 0 : rs.Score) - (rb.NoAssessment ? 0 : rb.Score),
+            // delta only when both sides are assessed — no fake number from absence
+            scoreDelta = (!rb.NoAssessment && !rs.NoAssessment) ? rs.Score - rb.Score : (int?)null,
             levelChanged = Lvl(rb) != Lvl(rs), assessChanged = rb.NoAssessment != rs.NoAssessment,
-            moneyDelta = (ms.AtRiskAmount ?? 0) - (mb.AtRiskAmount ?? 0),
+            assessTransition = rb.NoAssessment != rs.NoAssessment
+                ? (rb.NoAssessment ? "no_assessment_to_assessed" : "assessed_to_no_assessment") : "same",
+            // money delta only when both sides have a money estimate; a computed
+            // zero is a real zero, not a stand-in for "no estimate".
+            moneyDelta = (mb.AtRiskAmount.HasValue && ms.AtRiskAmount.HasValue)
+                ? ms.AtRiskAmount.Value - mb.AtRiskAmount.Value : (long?)null,
             reasonsChanged = !new HashSet<string>(rb.ReasonCodes).SetEquals(rs.ReasonCodes)
         };
     }).ToList();
     static string Lvl(Churn.Core.CustomerAssessment r) =>
         r.NoAssessment ? "no_assessment" : r.Level.ToString().ToLowerInvariant();
 
-    var changed = diffs.Where(d => d.levelChanged || d.assessChanged || d.scoreDelta != 0 || d.reasonsChanged || d.moneyDelta != 0)
-        .OrderByDescending(d => Math.Abs(d.scoreDelta)).ThenByDescending(d => Math.Abs(d.moneyDelta)).Take(20).ToList();
+    var changed = diffs.Where(d => d.levelChanged || d.assessChanged || d.scoreDelta != 0 || d.moneyDelta != 0 || d.reasonsChanged)
+        .OrderByDescending(d => Math.Abs(d.scoreDelta ?? 0)).ThenByDescending(d => Math.Abs(d.moneyDelta ?? 0)).Take(20).ToList();
+    var noEstimate = diffs.Count(d => d.scoreDelta is null);
     long rbR = 0, rbU = 0, rbA = 0, rsA = 0;
     foreach (var a in accounts)
     {
@@ -913,6 +930,8 @@ app.MapPost("/api/v1/analytics/whatif", async (AppDb db,
         scenCounts = new { high = diffs.Count(d => d.scenLevel == "high"), medium = diffs.Count(d => d.scenLevel == "medium"), low = diffs.Count(d => d.scenLevel == "low"), no_assessment = diffs.Count(d => d.scenLevel == "no_assessment") },
         moneyBase = new { at_risk_total = rbA, renewal_cost = rbR, uncovered = rbU },
         moneyScen = new { at_risk_total = rsA },
+        noEstimateCount = noEstimate,             // accounts with no score on at least one side
+        coveredCount = diffs.Count(d => d.scoreDelta is not null),  // assessed on both sides
         changed, baseModelVersion = baseSettings.ModelVersion,
         snapshotVersion = snapRow.SnapshotVersion,
     });

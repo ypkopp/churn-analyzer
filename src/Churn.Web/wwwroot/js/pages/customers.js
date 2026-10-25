@@ -714,8 +714,10 @@
     if(!r.ok){out.innerHTML=`<div class="analytics__empty">${esc(r.error?.message||r.error?.code||"")}</div>`;return;}
     const d=r.data;
     const lv=(k)=>`<span class="cmp__lv">${k}: ${d.countsA[k]||0} → ${d.countsB[k]||0}</span>`;
-    const rows=(d.changed||[]).slice(0,12).map(c=>`<div class="taskrow"><span class="taskrow__title">ID ${c.accountId}</span>
-      <span class="taskrow__meta">${c.from?.riskLevel??"—"} ${c.from?.riskScore??"—"} → ${c.to?.riskLevel??"—"} ${c.to?.riskScore??"—"}${c.assessChanged?" · оценка изменилась":""}${c.reasonChanged?" · причины":""}</span></div>`).join("");
+    const rows=(d.changed||[]).slice(0,12).map(c=>{
+      const delta = c.scoreDelta===null||c.scoreDelta===undefined ? "оценка: переход" : `Δ ${c.scoreDelta>0?"+":""}${c.scoreDelta}`;
+      return `<div class="taskrow"><span class="taskrow__title">ID ${c.accountId}</span>
+      <span class="taskrow__meta">${c.from?.riskLevel??"—"} ${c.from?.riskScore??"—"} → ${c.to?.riskLevel??"—"} ${c.to?.riskScore??"—"} · ${esc(c.transition||delta)}${c.reasonChanged?" · причины":""}</span></div>`;}).join("");
     out.innerHTML=`<div class="cmp__meta">A ${String(d.a.evaluationId).slice(0,8)} vs B ${String(d.b.evaluationId).slice(0,8)}${d.sameBatch?" · один батч":""}</div>
       <div class="cmp__levels">${lv("high")}${lv("medium")}${lv("low")}${lv("no_assessment")}</div>
       ${d.moneyA||d.moneyB?`<div class="cmp__meta">at-risk: ${d.moneyA?.atRiskTotal??"—"} → ${d.moneyB?.atRiskTotal??"—"} (EUR cents)</div>`:""}
@@ -732,8 +734,12 @@
     const r=await api.whatif(settings);
     if(!r.ok){out.innerHTML=`<div class="analytics__empty">${esc(r.error?.message||r.error?.code||"")}</div>`;return;}
     const d=r.data;
-    const rows=(d.changed||[]).map(c=>`<div class="taskrow"><span class="taskrow__title">${esc(c.email)}</span>
-      <span class="taskrow__meta">${c.baseLevel} ${c.baseScore??"—"} → ${c.scenLevel} ${c.scenScore??"—"}${c.assessChanged?" · оценка изменилась":""}${c.reasonsChanged?" · причины":""}</span></div>`).join("");
+    const rows=(d.changed||[]).map(c=>{
+      const score = c.scoreDelta===null||c.scoreDelta===undefined
+        ? (c.assessTransition||"переход") : `${c.scoreDelta>0?"+":""}${c.scoreDelta}`;
+      const money = c.moneyDelta===null||c.moneyDelta===undefined ? "" : ` · Δ€ ${c.moneyDelta>0?"+":""}${c.moneyDelta}`;
+      return `<div class="taskrow"><span class="taskrow__title">${esc(c.email)}</span>
+      <span class="taskrow__meta">${c.baseLevel} ${c.baseScore??"—"} → ${c.scenLevel} ${c.scenScore??"—"} · ${esc(score)}${money}${c.reasonsChanged?" · причины":""}</span></div>`;}).join("");
     out.innerHTML=`<div class="cmp__meta">asOf ${esc(Fmt.dateTime(d.asOf))} · baseline v${d.baseModelVersion} · snapshot v${d.snapshotVersion}</div>
       <div class="cmp__levels"><span class="cmp__lv">high ${d.baseCounts.high} → ${d.scenCounts.high}</span><span class="cmp__lv">medium ${d.baseCounts.medium} → ${d.scenCounts.medium}</span><span class="cmp__lv">low ${d.baseCounts.low} → ${d.scenCounts.low}</span><span class="cmp__lv">no_assess ${d.baseCounts.no_assessment} → ${d.scenCounts.no_assessment}</span></div>
       <div class="cmp__meta">at-risk: ${d.moneyBase.at_risk_total} → ${d.moneyScen.at_risk_total} (EUR cents)</div>
